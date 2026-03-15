@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
 )
@@ -15,11 +16,14 @@ type CronEntry struct {
 }
 
 // GenerateCrons converts the schedule config into GitHub Actions cron expressions.
-// Converts local times to UTC based on the timezone offset.
+// Handles DST automatically: for timezones with DST, generates two cron entries
+// per scheduled time (one for standard months, one for DST months) so that the
+// local time stays correct year-round.
 func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
-	offset := timezoneOffsetHours(tz)
-
 	var entries []CronEntry
+
+	stdOff, dstOff, stdMonths, dstMonths := dstOffsets(tz)
+	isDST := dstMonths != ""
 
 	// Group days by their schedule to produce compact cron expressions
 	type dayTimes struct {
@@ -65,23 +69,43 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 
 		for _, t := range g.times {
 			hour, minute := parseTime(t.Time)
-			utcHour := hour - offset
-			if utcHour < 0 {
-				utcHour += 24
-			} else if utcHour >= 24 {
-				utcHour -= 24
-			}
 
-			cron := fmt.Sprintf("%d %d * * %s", minute, utcHour, daysStr)
-			comment := fmt.Sprintf("%s %s (UTC%+d → %s local)", namesStr, t.Time, offset, t.Time)
-			entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+			// Standard time entry
+			utcHour := localToUTC(hour, stdOff)
+			if isDST {
+				cron := fmt.Sprintf("%d %d * %s %s", minute, utcHour, stdMonths, daysStr)
+				comment := fmt.Sprintf("%s %s (UTC%+d, standard)", namesStr, t.Time, stdOff)
+				entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+
+				// DST entry with different offset
+				utcHourDST := localToUTC(hour, dstOff)
+				cronDST := fmt.Sprintf("%d %d * %s %s", minute, utcHourDST, dstMonths, daysStr)
+				commentDST := fmt.Sprintf("%s %s (UTC%+d, DST)", namesStr, t.Time, dstOff)
+				entries = append(entries, CronEntry{Cron: cronDST, Comment: commentDST})
+			} else {
+				cron := fmt.Sprintf("%d %d * * %s", minute, utcHour, daysStr)
+				comment := fmt.Sprintf("%s %s (UTC%+d → %s local)", namesStr, t.Time, stdOff, t.Time)
+				entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+			}
 		}
 	}
 
 	return entries
 }
 
+// localToUTC converts a local hour to UTC given an offset in hours.
+func localToUTC(hour, offsetHours int) int {
+	utc := hour - offsetHours
+	if utc < 0 {
+		utc += 24
+	} else if utc >= 24 {
+		utc -= 24
+	}
+	return utc
+}
+
 // GenerateWorkflowYAML generates the auto-sign GitHub Actions workflow.
+// For DST zones, generates dual cron entries so local times stay correct year-round.
 func GenerateWorkflowYAML(schedule config.Schedule, tz string) string {
 	crons := GenerateCrons(schedule, tz)
 
@@ -191,25 +215,82 @@ jobs:
 `
 }
 
-func timezoneOffsetHours(tz string) int {
-	switch tz {
-	case "CET", "Europe/Madrid", "Europe/Barcelona", "Europe/Paris", "Europe/Berlin":
-		return 1
-	case "CEST":
-		return 2
-	case "UTC", "GMT":
-		return 0
-	case "EST":
-		return -5
-	case "PST":
-		return -8
-	default:
-		// Try to parse as +N or -N
-		if n, err := strconv.Atoi(tz); err == nil {
-			return n
-		}
-		return 1 // Default to CET
+// tzAliases maps common abbreviations to IANA zone names.
+var tzAliases = map[string]string{
+	"CET":  "Europe/Madrid",
+	"CEST": "Europe/Madrid",
+	"WET":  "Europe/Lisbon",
+	"EET":  "Europe/Athens",
+	"GMT":  "Europe/London",
+	"EST":  "America/New_York",
+	"CST":  "America/Chicago",
+	"MST":  "America/Denver",
+	"PST":  "America/Los_Angeles",
+}
+
+// loadTimezone resolves a timezone string to a *time.Location.
+// Accepts IANA names (Europe/Madrid) and common aliases (CET).
+func loadTimezone(tz string) *time.Location {
+	if tz == "UTC" || tz == "" {
+		return time.UTC
 	}
+	// Try alias first
+	if iana, ok := tzAliases[strings.ToUpper(tz)]; ok {
+		tz = iana
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		// Fallback: try parsing as numeric offset (+1, -5, etc.)
+		if n, err := strconv.Atoi(tz); err == nil {
+			return time.FixedZone(fmt.Sprintf("UTC%+d", n), n*3600)
+		}
+		return time.FixedZone("CET", 3600) // safe default
+	}
+	return loc
+}
+
+// timezoneOffsetHours computes the UTC offset in hours for the given timezone
+// at a specific reference time. This correctly handles DST transitions.
+func timezoneOffsetHours(tz string, at time.Time) int {
+	loc := loadTimezone(tz)
+	_, offset := at.In(loc).Zone()
+	return offset / 3600
+}
+
+// hasDST returns true if the timezone observes DST (different offsets in Jan vs Jul).
+func hasDST(tz string) bool {
+	loc := loadTimezone(tz)
+	jan := time.Date(2026, time.January, 15, 12, 0, 0, 0, loc)
+	jul := time.Date(2026, time.July, 15, 12, 0, 0, 0, loc)
+	_, offJan := jan.Zone()
+	_, offJul := jul.Zone()
+	return offJan != offJul
+}
+
+// dstOffsets returns the standard and DST offsets (in hours) and the month ranges
+// when each applies. For non-DST zones, both offsets are the same.
+func dstOffsets(tz string) (stdOffset, dstOffset int, stdMonths, dstMonths string) {
+	loc := loadTimezone(tz)
+	jan := time.Date(2026, time.January, 15, 12, 0, 0, 0, loc)
+	jul := time.Date(2026, time.July, 15, 12, 0, 0, 0, loc)
+	_, offJan := jan.Zone()
+	_, offJul := jul.Zone()
+
+	stdOffset = offJan / 3600
+	dstOffset = offJul / 3600
+
+	if stdOffset == dstOffset {
+		return stdOffset, dstOffset, "1-12", ""
+	}
+
+	// Northern hemisphere DST: clocks forward in March, back in October
+	// Standard (winter): Nov-Mar, DST (summer): Apr-Oct
+	if dstOffset > stdOffset {
+		return stdOffset, dstOffset, "1-3,11-12", "4-10"
+	}
+
+	// Southern hemisphere: reversed
+	return stdOffset, dstOffset, "4-10", "1-3,11-12"
 }
 
 func parseTime(t string) (hour, minute int) {

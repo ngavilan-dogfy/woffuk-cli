@@ -10,21 +10,24 @@ import (
 	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
 )
 
-// calendarGrid renders a visual monthly calendar with colored days.
+const cellWidth = 6 // wider cells to fit badge
+
+// calendarGrid renders a visual monthly calendar with colored days and badges.
 type calendarGrid struct {
-	year      int
-	month     time.Month
-	days      []woffu.CalendarDay
-	cursor    int // day of month (1-31), 0 = none
-	selected  map[int]bool
-	width     int
+	year     int
+	month    time.Month
+	days     []woffu.CalendarDay
+	cursor   int // day of month (1-31), 0 = none
+	selected map[int]bool
+	width    int
 }
 
 func newCalendarGrid(year int, month time.Month, days []woffu.CalendarDay) *calendarGrid {
 	today := time.Now().Day()
 	currentMonth := time.Now().Month()
+	currentYear := time.Now().Year()
 	cursor := 0
-	if month == currentMonth {
+	if month == currentMonth && year == currentYear {
 		cursor = today
 	} else {
 		cursor = 1
@@ -82,6 +85,19 @@ func (c *calendarGrid) selectedDates() []string {
 		}
 	}
 	return dates
+}
+
+// selectedDayInfos returns the CalendarDay for each selected day.
+func (c *calendarGrid) selectedDayInfos() []*woffu.CalendarDay {
+	var infos []*woffu.CalendarDay
+	for d := 1; d <= c.daysInMonth(); d++ {
+		if c.selected[d] {
+			if info := c.dayInfo(d); info != nil {
+				infos = append(infos, info)
+			}
+		}
+	}
+	return infos
 }
 
 func (c *calendarGrid) moveLeft() {
@@ -142,7 +158,7 @@ func (c *calendarGrid) render() string {
 	// Day names
 	dayNames := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 	for _, d := range dayNames {
-		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Width(5).Align(lipgloss.Center).Render(d))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Width(cellWidth).Align(lipgloss.Center).Render(d))
 	}
 	b.WriteString("\n")
 
@@ -160,7 +176,7 @@ func (c *calendarGrid) render() string {
 
 		for col := 0; col < 7; col++ {
 			if week == 0 && col < firstDay {
-				b.WriteString(strings.Repeat(" ", 5))
+				b.WriteString(strings.Repeat(" ", cellWidth))
 				continue
 			}
 			if day > totalDays {
@@ -174,14 +190,14 @@ func (c *calendarGrid) render() string {
 		b.WriteString("\n")
 	}
 
-	// Legend
+	// Badge legend
 	b.WriteString("\n")
 	b.WriteString("  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Render("●") + " office  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorSecondary).Render("●") + " remote  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorDanger).Render("●") + " holiday  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorWarning).Render("●") + " absence  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("●") + " weekend")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorSecondary).Bold(true).Render("T") + " telework  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorWarning).Bold(true).Render("V") + " vacation  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorDanger).Bold(true).Render("H") + " holiday  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorWarning).Bold(true).Render("A") + " absence  ")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Bold(true).Render("●") + " signed")
 
 	// Selected count
 	if len(c.selected) > 0 {
@@ -191,37 +207,114 @@ func (c *calendarGrid) render() string {
 		b.WriteString("  " + sDimmed.Render("enter=action  x=clear"))
 	}
 
-	// Current day info
-	if info := c.dayInfo(c.cursor); info != nil {
-		b.WriteString("\n\n")
-		b.WriteString("  " + sValue.Render(info.Date) + "  ")
-		switch info.Status {
-		case "working":
-			if info.Mode == "remote" {
-				b.WriteString(lipgloss.NewStyle().Foreground(colorSecondary).Render("Remote"))
-			} else {
-				b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Render("Office"))
+	// Day detail panel
+	b.WriteString(c.renderDayDetail())
+
+	return b.String()
+}
+
+// renderDayDetail renders the rich context panel for the cursor day.
+func (c *calendarGrid) renderDayDetail() string {
+	info := c.dayInfo(c.cursor)
+	if info == nil {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n\n")
+
+	// Date + status
+	dateStyle := sValue
+	b.WriteString("  " + dateStyle.Render(info.Date) + "  ")
+
+	switch info.Status {
+	case "working":
+		if info.Mode == "remote" {
+			b.WriteString(lipgloss.NewStyle().Foreground(colorSecondary).Bold(true).Render("Remote"))
+		} else {
+			b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Bold(true).Render("Office"))
+		}
+	case "holiday":
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDanger).Bold(true).Render("Holiday"))
+	case "weekend":
+		b.WriteString(sDimmed.Render("Weekend"))
+	case "absence":
+		b.WriteString(lipgloss.NewStyle().Foreground(colorWarning).Bold(true).Render("Absence"))
+	}
+
+	// Event names (holidays, etc.)
+	if len(info.EventNames) > 0 {
+		b.WriteString("  " + sDimmed.Render(strings.Join(info.EventNames, ", ")))
+	}
+
+	// Requests
+	if len(info.Requests) > 0 {
+		b.WriteString("\n")
+		for _, r := range info.Requests {
+			statusStyle := sDimmed
+			statusIcon := "○"
+			switch r.Status {
+			case "approved":
+				statusStyle = lipgloss.NewStyle().Foreground(colorSuccess)
+				statusIcon = "✓"
+			case "pending":
+				statusStyle = lipgloss.NewStyle().Foreground(colorWarning)
+				statusIcon = "◷"
+			case "rejected":
+				statusStyle = lipgloss.NewStyle().Foreground(colorDanger)
+				statusIcon = "✗"
 			}
-		case "holiday":
-			b.WriteString(lipgloss.NewStyle().Foreground(colorDanger).Render("Holiday"))
-		case "weekend":
-			b.WriteString(sDimmed.Render("Weekend"))
-		case "absence":
-			b.WriteString(lipgloss.NewStyle().Foreground(colorWarning).Render("Absence"))
+			b.WriteString(fmt.Sprintf("    %s %s  %s",
+				statusStyle.Render(statusIcon),
+				lipgloss.NewStyle().Foreground(colorText).Render(r.EventName),
+				statusStyle.Render(r.Status)))
+			b.WriteString(fmt.Sprintf("  %s", sDimmed.Render(fmt.Sprintf("#%d", r.RequestID))))
+			b.WriteString("\n")
 		}
-		if len(info.EventNames) > 0 {
-			b.WriteString("  " + sDimmed.Render(info.EventNames[0]))
+	}
+
+	// Sign slots
+	if len(info.Signs) > 0 {
+		b.WriteString("    ")
+		for _, s := range info.Signs {
+			if s.In != "" {
+				b.WriteString(lipgloss.NewStyle().Foreground(colorSuccess).Render("IN") + " " + sValue.Render(extractTimeFromDT(s.In)) + "  ")
+			}
+			if s.Out != "" {
+				b.WriteString(lipgloss.NewStyle().Foreground(colorDanger).Render("OUT") + " " + sValue.Render(extractTimeFromDT(s.Out)) + "  ")
+			}
 		}
+		b.WriteString("\n")
 	}
 
 	return b.String()
 }
 
-func (c *calendarGrid) renderDay(day, col int, isToday bool) string {
-	label := fmt.Sprintf("%2d", day)
-	style := lipgloss.NewStyle().Width(5).Align(lipgloss.Center)
+// extractTimeFromDT extracts HH:MM from a datetime string.
+func extractTimeFromDT(dt string) string {
+	if idx := strings.Index(dt, "T"); idx != -1 {
+		t := dt[idx+1:]
+		if len(t) >= 5 {
+			return t[:5]
+		}
+	}
+	return dt
+}
 
+func (c *calendarGrid) renderDay(day, col int, isToday bool) string {
 	info := c.dayInfo(day)
+	badge := ""
+	if info != nil {
+		badge = info.Badge()
+	}
+
+	// Build cell content: "DD" or "DDb" where b is badge
+	label := fmt.Sprintf("%2d", day)
+	if badge != "" {
+		label = fmt.Sprintf("%2d%s", day, badge)
+	}
+
+	style := lipgloss.NewStyle().Width(cellWidth).Align(lipgloss.Center)
 
 	// Color based on status
 	if info != nil {

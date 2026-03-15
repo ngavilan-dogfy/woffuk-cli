@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -35,6 +36,7 @@ type dataMsg struct {
 	profile      *woffu.UserProfile
 	slots        []woffu.SignSlot
 	calendarDays []woffu.CalendarDay
+	userId       int
 }
 type errMsg struct{ err error }
 type signDoneMsg struct{}
@@ -42,6 +44,8 @@ type autoToggleMsg struct{ enabled bool }
 type syncDoneMsg struct{}
 type clearFlashMsg struct{}
 type tickMsg time.Time
+type scheduleEditDoneMsg struct{}
+type execDoneMsg struct{ err error }
 
 // ── Action items for the overlay menu ──
 
@@ -58,11 +62,12 @@ type overlayKind int
 type requestDoneMsg struct{ count int }
 
 const (
-	overlayNone     overlayKind = iota
-	overlayMenu                 // action menu
-	overlaySignConf             // sign confirmation
-	overlayAutoConf             // auto-sign toggle confirmation
-	overlayCalAction            // calendar batch action picker
+	overlayNone      overlayKind = iota
+	overlayMenu                  // action menu
+	overlaySignConf              // sign confirmation
+	overlayAutoConf              // auto-sign toggle confirmation
+	overlayCalAction             // calendar batch action picker
+	overlayDayAction             // single day context menu
 )
 
 // ── Dashboard model ──
@@ -76,6 +81,7 @@ type Dashboard struct {
 	// Data
 	loading      bool
 	token        string
+	userId       int
 	signInfo     *woffu.SignInfo
 	events       []woffu.AvailableUserEvent
 	profile      *woffu.UserProfile
@@ -132,6 +138,7 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.profile = msg.profile
 		d.slots = msg.slots
 		d.calendarDays = msg.calendarDays
+		d.userId = msg.userId
 		if d.cal == nil && len(msg.calendarDays) > 0 {
 			now := time.Now()
 			d.cal = newCalendarGrid(now.Year(), now.Month(), msg.calendarDays)
@@ -161,6 +168,19 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case syncDoneMsg:
 		d.setFlash("Synced to GitHub", false)
 		return d, d.clearFlashAfter(3 * time.Second)
+
+	case execDoneMsg:
+		if msg.err != nil {
+			d.setFlash("Schedule edit cancelled", true)
+			return d, d.clearFlashAfter(3 * time.Second)
+		}
+		// Reload config after schedule edit
+		newCfg, err := config.Load()
+		if err == nil {
+			d.cfg = newCfg
+		}
+		d.setFlash("Schedule updated!", false)
+		return d, tea.Batch(d.fetchData(), d.clearFlashAfter(3*time.Second))
 
 	case errMsg:
 		d.loading = false
@@ -207,7 +227,7 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return d, nil
 	}
 
-	// ── Overlay: calendar action ──
+	// ── Overlay: calendar action (multi-select) ──
 	if d.overlay == overlayCalAction {
 		calActions := d.getCalActions()
 		switch key {
@@ -224,6 +244,27 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			d.overlay = overlayNone
 			return d, d.executeCalAction(calActions[d.menuCursor])
+		}
+		return d, nil
+	}
+
+	// ── Overlay: single day action ──
+	if d.overlay == overlayDayAction {
+		dayActions := d.getDayActions()
+		switch key {
+		case "esc", "q":
+			d.overlay = overlayNone
+		case "up", "k":
+			if d.menuCursor > 0 {
+				d.menuCursor--
+			}
+		case "down", "j":
+			if d.menuCursor < len(dayActions)-1 {
+				d.menuCursor++
+			}
+		case "enter":
+			d.overlay = overlayNone
+			return d, d.executeDayAction(dayActions[d.menuCursor])
 		}
 		return d, nil
 	}
@@ -284,8 +325,8 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				d.menuCursor = 0
 				return d, nil
 			}
-			// No selection → open action menu
-			d.overlay = overlayMenu
+			// No selection → single day context menu
+			d.overlay = overlayDayAction
 			d.menuCursor = 0
 			return d, nil
 		}
@@ -393,6 +434,8 @@ func (d *Dashboard) View() string {
 		return d.renderOverlayMenu()
 	case overlayCalAction:
 		return d.renderCalActionOverlay()
+	case overlayDayAction:
+		return d.renderDayActionOverlay()
 	case overlaySignConf:
 		return d.renderOverlayConfirm("Sign now?", "Clock in/out on Woffu right now.", "y/enter", "n/esc")
 	case overlayAutoConf:
@@ -625,7 +668,7 @@ func (d *Dashboard) renderHelp() string {
 			hint("space", "select"),
 			hint("[/]", "month"),
 			hint("x", "clear"),
-			hint("enter", "action"),
+			hint("enter", "day action"),
 		}
 	}
 
@@ -667,6 +710,7 @@ func (d *Dashboard) getActions() []action {
 	}
 
 	actions = append(actions,
+		action{key: "edit-schedule", name: "Edit schedule", desc: "Change auto-sign times"},
 		action{key: "sync", name: "Sync to GitHub", desc: "Push secrets + workflows to fork"},
 		action{key: "open", name: "Open Woffu", desc: "Open Woffu in browser"},
 		action{key: "open-gh", name: "Open GitHub fork", desc: "View fork and workflow runs"},
@@ -683,6 +727,8 @@ func (d *Dashboard) executeAction(a action) tea.Cmd {
 		return d.toggleAuto(true)
 	case "auto-off":
 		return d.toggleAuto(false)
+	case "edit-schedule":
+		return d.editSchedule()
 	case "sync":
 		return d.syncGitHub()
 	case "open":
@@ -777,13 +823,23 @@ func (d *Dashboard) fetchData() tea.Cmd {
 		slots, _ := woffu.GetTodaySlots(d.companyClient, token)
 
 		// Calendar for current month (or the month the grid is showing)
-		calMonth := int(time.Now().Month())
+		calYear := time.Now().Year()
+		calMonth := time.Now().Month()
 		if d.cal != nil {
-			calMonth = int(d.cal.month)
+			calYear = d.cal.year
+			calMonth = d.cal.month
 		}
-		calDays, _ := woffu.GetCalendarMonth(d.companyClient, token, calMonth)
+		calDays, _ := woffu.GetCalendarMonthYM(d.companyClient, token, calYear, calMonth)
 
-		return dataMsg{signInfo: info, events: events, profile: profile, slots: slots, calendarDays: calDays}
+		// Enrich calendar with requests and signs
+		userId, _, _ := woffu.GetUserIds(d.companyClient, token)
+		if userId > 0 {
+			reqs, _ := woffu.GetMonthRequests(d.companyClient, token, userId, calYear, calMonth)
+			signs, _ := woffu.GetMonthSigns(d.companyClient, token, calYear, calMonth)
+			woffu.EnrichCalendarDays(calDays, reqs, signs)
+		}
+
+		return dataMsg{signInfo: info, events: events, profile: profile, slots: slots, calendarDays: calDays, userId: userId}
 	}
 }
 
@@ -856,22 +912,123 @@ func (d *Dashboard) syncGitHub() tea.Cmd {
 	}
 }
 
+// editSchedule suspends the TUI and runs `woffux schedule edit` interactively.
+func (d *Dashboard) editSchedule() tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		bin = "woffux"
+	}
+	c := exec.Command(bin, "schedule", "edit")
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return execDoneMsg{err: err}
+	})
+}
+
 // ── Calendar batch actions ──
 
 func (d *Dashboard) getCalActions() []action {
-	n := len(d.cal.selected)
-	return []action{
-		{key: "telework", name: fmt.Sprintf("Request Telework (%d days)", n), desc: "Teletrabajo🏡"},
-		{key: "vacation", name: fmt.Sprintf("Request Vacation (%d days)", n), desc: "Vacaciones"},
-		{key: "personal", name: fmt.Sprintf("Request Personal Day (%d days)", n), desc: "Asuntos Propios"},
-		{key: "hours", name: fmt.Sprintf("Request Hours Pool (%d days)", n), desc: "Bolsa de horas"},
+	infos := d.cal.selectedDayInfos()
+	n := len(infos)
+	if n == 0 {
+		return nil
 	}
+
+	// Analyze selection
+	workingNoReq := 0
+	withPendingReq := 0
+	withApprovedReq := 0
+
+	for _, info := range infos {
+		hasActiveReq := false
+		for _, r := range info.Requests {
+			switch r.Status {
+			case "pending":
+				withPendingReq++
+				hasActiveReq = true
+			case "approved":
+				withApprovedReq++
+				hasActiveReq = true
+			}
+		}
+		if !hasActiveReq && info.Status == "working" {
+			workingNoReq++
+		}
+	}
+
+	var actions []action
+
+	// Offer creation actions if there are working days without requests
+	if workingNoReq > 0 {
+		actions = append(actions,
+			action{key: "telework", name: fmt.Sprintf("Request Telework (%d days)", workingNoReq), desc: "Teletrabajo 🏡"},
+			action{key: "vacation", name: fmt.Sprintf("Request Vacation (%d days)", workingNoReq), desc: "Vacaciones"},
+			action{key: "personal", name: fmt.Sprintf("Request Personal Day (%d days)", workingNoReq), desc: "Asuntos Propios"},
+			action{key: "hours", name: fmt.Sprintf("Request Hours Pool (%d days)", workingNoReq), desc: "Bolsa de horas"},
+		)
+	}
+
+	// Offer cancel if there are pending/approved requests
+	if withPendingReq > 0 {
+		actions = append(actions, action{
+			key:  "cancel-pending",
+			name: fmt.Sprintf("Cancel pending requests (%d)", withPendingReq),
+			desc: "Remove pending requests",
+		})
+	}
+	if withApprovedReq > 0 {
+		actions = append(actions, action{
+			key:  "cancel-approved",
+			name: fmt.Sprintf("Cancel approved requests (%d)", withApprovedReq),
+			desc: "Cancel approved requests",
+		})
+	}
+
+	// Fallback if nothing matched (e.g. all holidays/weekends)
+	if len(actions) == 0 {
+		actions = append(actions, action{
+			key: "noop", name: "No actions available", desc: "Selected days are holidays/weekends",
+		})
+	}
+
+	return actions
 }
 
 func (d *Dashboard) executeCalAction(a action) tea.Cmd {
-	dates := d.cal.selectedDates()
-	if len(dates) == 0 {
+	if a.key == "noop" {
 		return nil
+	}
+
+	// Handle cancel actions
+	if a.key == "cancel-pending" || a.key == "cancel-approved" {
+		targetStatus := "pending"
+		if a.key == "cancel-approved" {
+			targetStatus = "approved"
+		}
+		return d.cancelSelectedRequests(targetStatus)
+	}
+
+	// Creation actions — only operate on working days without active requests
+	infos := d.cal.selectedDayInfos()
+	var eligibleDates []string
+	for _, info := range infos {
+		if info.Status != "working" {
+			continue
+		}
+		hasActiveReq := false
+		for _, r := range info.Requests {
+			if r.Status == "pending" || r.Status == "approved" {
+				hasActiveReq = true
+				break
+			}
+		}
+		if !hasActiveReq {
+			eligibleDates = append(eligibleDates, info.Date)
+		}
+	}
+
+	if len(eligibleDates) == 0 {
+		d.setFlash("No eligible days for this action", true)
+		return d.clearFlashAfter(3 * time.Second)
 	}
 
 	// Map action key to search term for request type
@@ -887,16 +1044,14 @@ func (d *Dashboard) executeCalAction(a action) tea.Cmd {
 		return nil
 	}
 
-	d.setFlash(fmt.Sprintf("Submitting %d requests...", len(dates)), false)
+	d.setFlash(fmt.Sprintf("Submitting %d requests...", len(eligibleDates)), false)
 
 	return func() tea.Msg {
-		// Get request types
 		types, err := woffu.GetRequestTypes(d.companyClient, d.token)
 		if err != nil {
 			return errMsg{err}
 		}
 
-		// Find matching type
 		var matchedType *woffu.RequestType
 		for i, t := range types {
 			if strings.Contains(strings.ToLower(t.Name), search) {
@@ -914,13 +1069,44 @@ func (d *Dashboard) executeCalAction(a action) tea.Cmd {
 		}
 
 		count := 0
-		for _, date := range dates {
+		for _, date := range eligibleDates {
 			err := woffu.CreateRequest(d.companyClient, d.token, userId, companyId, matchedType.ID, date, date, matchedType.IsVacation)
 			if err == nil {
 				count++
 			}
 		}
 
+		return requestDoneMsg{count: count}
+	}
+}
+
+// cancelSelectedRequests cancels requests matching the target status on selected days.
+func (d *Dashboard) cancelSelectedRequests(targetStatus string) tea.Cmd {
+	infos := d.cal.selectedDayInfos()
+
+	var requestIDs []int
+	for _, info := range infos {
+		for _, r := range info.Requests {
+			if r.Status == targetStatus {
+				requestIDs = append(requestIDs, r.RequestID)
+			}
+		}
+	}
+
+	if len(requestIDs) == 0 {
+		d.setFlash("No requests to cancel", true)
+		return d.clearFlashAfter(3 * time.Second)
+	}
+
+	d.setFlash(fmt.Sprintf("Cancelling %d requests...", len(requestIDs)), false)
+
+	return func() tea.Msg {
+		count := 0
+		for _, id := range requestIDs {
+			if err := woffu.CancelRequest(d.companyClient, d.token, id); err == nil {
+				count++
+			}
+		}
 		return requestDoneMsg{count: count}
 	}
 }
@@ -952,6 +1138,173 @@ func (d *Dashboard) renderCalActionOverlay() string {
 		Render(menuContent)
 
 	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, menuBox)
+}
+
+func (d *Dashboard) renderDayActionOverlay() string {
+	actions := d.getDayActions()
+
+	var rows []string
+	for i, a := range actions {
+		cursor := "  "
+		style := sDimmed
+		if i == d.menuCursor {
+			cursor = sKey.Render("▸ ")
+			style = sValue
+		}
+		name := style.Render(a.name)
+		desc := ""
+		if a.desc != "" {
+			desc = "  " + sDimmed.Render(a.desc)
+		}
+		rows = append(rows, cursor+name+desc)
+	}
+
+	info := d.cal.dayInfo(d.cal.cursor)
+	title := fmt.Sprintf("  %s", info.Date)
+
+	menuContent := sSection.Render(title) + "\n\n" + strings.Join(rows, "\n") + "\n\n" +
+		sDimmed.Render("  ↑↓ navigate  enter select  esc close")
+
+	menuBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorSecondary).
+		Padding(1, 2).
+		Render(menuContent)
+
+	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, menuBox)
+}
+
+// ── Single day context actions ──
+
+func (d *Dashboard) getDayActions() []action {
+	if d.cal == nil {
+		return nil
+	}
+	info := d.cal.dayInfo(d.cal.cursor)
+	if info == nil {
+		return []action{{key: "noop", name: "No data for this day", desc: ""}}
+	}
+
+	var actions []action
+
+	// Check existing requests on this day
+	hasPending := false
+	hasApproved := false
+	for _, r := range info.Requests {
+		switch r.Status {
+		case "pending":
+			hasPending = true
+			actions = append(actions, action{
+				key:  fmt.Sprintf("cancel-req:%d", r.RequestID),
+				name: fmt.Sprintf("Cancel \"%s\" (pending)", r.EventName),
+				desc: fmt.Sprintf("Request #%d", r.RequestID),
+			})
+		case "approved":
+			hasApproved = true
+			actions = append(actions, action{
+				key:  fmt.Sprintf("cancel-req:%d", r.RequestID),
+				name: fmt.Sprintf("Cancel \"%s\" (approved)", r.EventName),
+				desc: fmt.Sprintf("Request #%d", r.RequestID),
+			})
+		}
+	}
+
+	// Offer creation if working day with no active requests
+	if info.Status == "working" && !hasPending && !hasApproved {
+		actions = append(actions,
+			action{key: "day-telework", name: "Request teletrabajo", desc: "🏡"},
+			action{key: "day-vacation", name: "Request vacation", desc: "🏖️"},
+			action{key: "day-personal", name: "Request personal day", desc: ""},
+		)
+	}
+
+	if len(info.Signs) > 0 {
+		actions = append(actions, action{key: "view-signs", name: "View sign history", desc: fmt.Sprintf("%d slots", len(info.Signs))})
+	}
+
+	if len(actions) == 0 {
+		switch info.Status {
+		case "holiday":
+			actions = append(actions, action{key: "noop", name: "Holiday — no actions", desc: strings.Join(info.EventNames, ", ")})
+		case "weekend":
+			actions = append(actions, action{key: "noop", name: "Weekend — no actions", desc: ""})
+		default:
+			actions = append(actions, action{key: "noop", name: "No actions available", desc: ""})
+		}
+	}
+
+	return actions
+}
+
+func (d *Dashboard) executeDayAction(a action) tea.Cmd {
+	if a.key == "noop" || a.key == "view-signs" {
+		return nil
+	}
+
+	// Handle cancel
+	if strings.HasPrefix(a.key, "cancel-req:") {
+		idStr := strings.TrimPrefix(a.key, "cancel-req:")
+		var reqID int
+		fmt.Sscanf(idStr, "%d", &reqID)
+		if reqID == 0 {
+			return nil
+		}
+		d.setFlash("Cancelling request...", false)
+		return func() tea.Msg {
+			if err := woffu.CancelRequest(d.companyClient, d.token, reqID); err != nil {
+				return errMsg{err}
+			}
+			return requestDoneMsg{count: 1}
+		}
+	}
+
+	// Handle day-specific request creation
+	typeSearch := map[string]string{
+		"day-telework": "teletrabajo",
+		"day-vacation": "vacaciones",
+		"day-personal": "asuntos propios",
+	}
+
+	search := typeSearch[a.key]
+	if search == "" {
+		return nil
+	}
+
+	info := d.cal.dayInfo(d.cal.cursor)
+	if info == nil {
+		return nil
+	}
+	date := info.Date
+
+	d.setFlash("Submitting request...", false)
+	return func() tea.Msg {
+		types, err := woffu.GetRequestTypes(d.companyClient, d.token)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		var matchedType *woffu.RequestType
+		for i, t := range types {
+			if strings.Contains(strings.ToLower(t.Name), search) {
+				matchedType = &types[i]
+				break
+			}
+		}
+		if matchedType == nil {
+			return errMsg{fmt.Errorf("request type \"%s\" not found", search)}
+		}
+
+		userId, companyId, err := woffu.GetUserIds(d.companyClient, d.token)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		if err := woffu.CreateRequest(d.companyClient, d.token, userId, companyId, matchedType.ID, date, date, matchedType.IsVacation); err != nil {
+			return errMsg{err}
+		}
+
+		return requestDoneMsg{count: 1}
+	}
 }
 
 func (d *Dashboard) applyPreset(name string) tea.Cmd {
