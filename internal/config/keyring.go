@@ -2,7 +2,7 @@ package config
 
 import "github.com/zalando/go-keyring"
 
-const serviceName = "woffuk"
+const serviceName = "woffux"
 
 func SetPassword(email, password string) error {
 	return keyring.Set(serviceName, email, password)

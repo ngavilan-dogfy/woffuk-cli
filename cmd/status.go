@@ -25,7 +25,7 @@ var statusCmd = &cobra.Command{
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		info, err := woffu.GetSignInfo(companyClient, token, cfg.Latitude, cfg.Longitude, cfg.HomeLatitude, cfg.HomeLongitude)

@@ -20,8 +20,8 @@ var holidaysCmd = &cobra.Command{
 	Long: `Show all holidays in your company calendar.
 
 Examples:
-  woffuk holidays
-  woffuk holidays --json | jq '.[].name'`,
+  woffux holidays
+  woffux holidays --json | jq '.[].name'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -33,7 +33,7 @@ Examples:
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		_, calendarId, err := woffu.GetUserId(companyClient, token)

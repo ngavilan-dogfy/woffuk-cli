@@ -14,7 +14,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "woffuk",
+	Use:     "woffux",
 	Short:   "Woffu time tracking CLI",
 	Version: Version,
 	Long: `A CLI tool for Woffu time tracking. Fully scriptable and pipe-friendly.
@@ -25,32 +25,32 @@ All commands auto-detect TTY:
   • --json    → structured JSON
 
 Querying:
-  woffuk status              Today's signing status
-  woffuk today               Detailed day info + sign slots
-  woffuk events              Available vacations, hours, etc.
-  woffuk requests            Your requests (vacations, telework, absences)
-  woffuk history             Sign history (clock in/out records)
-  woffuk calendar            Working days, holidays, telework
-  woffuk holidays            Company holidays
-  woffuk schedule            View auto-sign schedule
-  woffuk whoami              Current user profile
+  woffux status              Today's signing status
+  woffux today               Detailed day info + sign slots
+  woffux events              Available vacations, hours, etc.
+  woffux requests            Your requests (vacations, telework, absences)
+  woffux history             Sign history (clock in/out records)
+  woffux calendar            Working days, holidays, telework
+  woffux holidays            Company holidays
+  woffux schedule            View auto-sign schedule
+  woffux whoami              Current user profile
 
 Actions:
-  woffuk sign                Clock in/out right now
-  woffuk sign --force        Sign even on non-working days
-  woffuk request             Create a request (telework, vacation, absence)
-  woffuk request cancel <id> Cancel a request
-  woffuk auto                Check auto-signing status
-  woffuk auto on/off         Toggle auto-signing
-  woffuk open [page]         Open Woffu in browser (docs, calendar, github)
+  woffux sign                Clock in/out right now
+  woffux sign --force        Sign even on non-working days
+  woffux request             Create a request (telework, vacation, absence)
+  woffux request cancel <id> Cancel a request
+  woffux auto                Check auto-signing status
+  woffux auto on/off         Toggle auto-signing
+  woffux open [page]         Open Woffu in browser (docs, calendar, github)
 
 Configuration:
-  woffuk setup               Full setup wizard
-  woffuk config              View all settings
-  woffuk config edit         Change any individual setting
-  woffuk schedule edit       Edit schedule and push to GitHub
-  woffuk sync                Re-sync secrets + workflows
-  woffuk update              Update to latest version
+  woffux setup               Full setup wizard
+  woffux config              View all settings
+  woffux config edit         Change any individual setting
+  woffux schedule edit       Edit schedule and push to GitHub
+  woffux sync                Re-sync secrets + workflows
+  woffux update              Update to latest version
 
 Output modes (on most commands):
   --json                     Structured JSON for scripting
@@ -109,19 +109,19 @@ func loadConfigOrSetup() (*config.Config, string, error) {
 		fmt.Println()
 		fmt.Printf("  %s No config found. Run %s to get started.\n\n",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("!"),
-			lipgloss.NewStyle().Bold(true).Render("woffuk setup"))
+			lipgloss.NewStyle().Bold(true).Render("woffux setup"))
 		fmt.Println(hint.Render("  This is a one-time setup that configures your Woffu credentials,"))
 		fmt.Println(hint.Render("  GPS coordinates, and GitHub Actions for auto-signing."))
 		fmt.Println()
-		return nil, "", fmt.Errorf("run 'woffuk setup' first")
+		return nil, "", fmt.Errorf("run 'woffux setup' first")
 	}
 
 	if cfg.WoffuEmail == "" || cfg.WoffuCompanyURL == "" {
 		fmt.Println()
 		fmt.Printf("  %s Config is incomplete. Run %s to reconfigure.\n\n",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("!"),
-			lipgloss.NewStyle().Bold(true).Render("woffuk setup"))
-		return nil, "", fmt.Errorf("incomplete config — run 'woffuk setup'")
+			lipgloss.NewStyle().Bold(true).Render("woffux setup"))
+		return nil, "", fmt.Errorf("incomplete config — run 'woffux setup'")
 	}
 
 	password, err := config.GetPassword(cfg.WoffuEmail)
@@ -131,8 +131,8 @@ func loadConfigOrSetup() (*config.Config, string, error) {
 			lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("!"),
 			cfg.WoffuEmail)
 		fmt.Printf("  Run %s to reconfigure.\n\n",
-			lipgloss.NewStyle().Bold(true).Render("woffuk setup"))
-		return nil, "", fmt.Errorf("password not in keychain — run 'woffuk setup'")
+			lipgloss.NewStyle().Bold(true).Render("woffux setup"))
+		return nil, "", fmt.Errorf("password not in keychain — run 'woffux setup'")
 	}
 
 	return cfg, password, nil

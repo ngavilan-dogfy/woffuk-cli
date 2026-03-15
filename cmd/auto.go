@@ -25,7 +25,7 @@ var autoCmd = &cobra.Command{
 		if cfg.GithubFork == "" {
 			fmt.Println()
 			fmt.Printf("  %s Auto-signing is not set up.\n", sWarn)
-			fmt.Printf("  Run %s to configure GitHub Actions.\n\n", sBold.Render("woffuk setup"))
+			fmt.Printf("  Run %s to configure GitHub Actions.\n\n", sBold.Render("woffux setup"))
 			return nil
 		}
 
@@ -42,7 +42,7 @@ var autoOnCmd = &cobra.Command{
 			return err
 		}
 		if cfg.GithubFork == "" {
-			fmt.Printf("\n  %s Run %s first.\n\n", sWarn, sBold.Render("woffuk setup"))
+			fmt.Printf("\n  %s Run %s first.\n\n", sWarn, sBold.Render("woffux setup"))
 			return nil
 		}
 
@@ -72,7 +72,7 @@ var autoOffCmd = &cobra.Command{
 			return err
 		}
 		if cfg.GithubFork == "" {
-			fmt.Printf("\n  %s Run %s first.\n\n", sWarn, sBold.Render("woffuk setup"))
+			fmt.Printf("\n  %s Run %s first.\n\n", sWarn, sBold.Render("woffux setup"))
 			return nil
 		}
 
@@ -144,8 +144,8 @@ func showAutoStatus(repo string) error {
 
 	fmt.Println()
 	fmt.Printf("  Toggle: %s / %s\n\n",
-		sBold.Render("woffuk auto on"),
-		sBold.Render("woffuk auto off"))
+		sBold.Render("woffux auto on"),
+		sBold.Render("woffux auto off"))
 
 	return nil
 }

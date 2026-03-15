@@ -30,10 +30,11 @@ var tabNames = [tabCount]string{"Status", "Events", "Calendar"}
 // ── Messages ──
 
 type dataMsg struct {
-	signInfo *woffu.SignInfo
-	events   []woffu.AvailableUserEvent
-	profile  *woffu.UserProfile
-	slots    []woffu.SignSlot
+	signInfo     *woffu.SignInfo
+	events       []woffu.AvailableUserEvent
+	profile      *woffu.UserProfile
+	slots        []woffu.SignSlot
+	calendarDays []woffu.CalendarDay
 }
 type errMsg struct{ err error }
 type signDoneMsg struct{}
@@ -54,11 +55,14 @@ type action struct {
 
 type overlayKind int
 
+type requestDoneMsg struct{ count int }
+
 const (
 	overlayNone     overlayKind = iota
 	overlayMenu                 // action menu
 	overlaySignConf             // sign confirmation
 	overlayAutoConf             // auto-sign toggle confirmation
+	overlayCalAction            // calendar batch action picker
 )
 
 // ── Dashboard model ──
@@ -70,14 +74,15 @@ type Dashboard struct {
 	password      string
 
 	// Data
-	loading    bool
-	token      string
-	signInfo   *woffu.SignInfo
-	events     []woffu.AvailableUserEvent
-	profile    *woffu.UserProfile
-	slots      []woffu.SignSlot
-	autoActive *bool // nil = unknown
-	err        error
+	loading      bool
+	token        string
+	signInfo     *woffu.SignInfo
+	events       []woffu.AvailableUserEvent
+	profile      *woffu.UserProfile
+	slots        []woffu.SignSlot
+	calendarDays []woffu.CalendarDay
+	autoActive   *bool // nil = unknown
+	err          error
 
 	// UI state
 	activeTab  int
@@ -87,6 +92,7 @@ type Dashboard struct {
 	autoTarget bool // what the auto-sign toggle overlay wants to set
 	flash      string
 	flashErr   bool
+	cal        *calendarGrid // interactive calendar
 
 	// Layout
 	width  int
@@ -125,6 +131,17 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		d.events = msg.events
 		d.profile = msg.profile
 		d.slots = msg.slots
+		d.calendarDays = msg.calendarDays
+		if d.cal == nil && len(msg.calendarDays) > 0 {
+			now := time.Now()
+			d.cal = newCalendarGrid(now.Year(), now.Month(), msg.calendarDays)
+		} else if d.cal != nil {
+			d.cal.days = msg.calendarDays
+		}
+
+	case requestDoneMsg:
+		d.setFlash(fmt.Sprintf("%d requests submitted!", msg.count), false)
+		return d, tea.Batch(d.fetchData(), d.clearFlashAfter(3*time.Second))
 
 	case signDoneMsg:
 		d.signing = false
@@ -190,6 +207,27 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return d, nil
 	}
 
+	// ── Overlay: calendar action ──
+	if d.overlay == overlayCalAction {
+		calActions := d.getCalActions()
+		switch key {
+		case "esc", "q":
+			d.overlay = overlayNone
+		case "up", "k":
+			if d.menuCursor > 0 {
+				d.menuCursor--
+			}
+		case "down", "j":
+			if d.menuCursor < len(calActions)-1 {
+				d.menuCursor++
+			}
+		case "enter":
+			d.overlay = overlayNone
+			return d, d.executeCalAction(calActions[d.menuCursor])
+		}
+		return d, nil
+	}
+
 	// ── Overlay: action menu ──
 	if d.overlay == overlayMenu {
 		actions := d.getActions()
@@ -209,6 +247,48 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return d, d.executeAction(actions[d.menuCursor])
 		}
 		return d, nil
+	}
+
+	// ── Calendar tab keys ──
+	if d.activeTab == tabCalendar && d.cal != nil && d.overlay == overlayNone {
+		switch key {
+		case "left", "h":
+			d.cal.moveLeft()
+			return d, nil
+		case "right", "l":
+			d.cal.moveRight()
+			return d, nil
+		case "up", "k":
+			d.cal.moveUp()
+			return d, nil
+		case "down", "j":
+			d.cal.moveDown()
+			return d, nil
+		case " ":
+			d.cal.toggleSelect(d.cal.cursor)
+			return d, nil
+		case "x":
+			d.cal.clearSelection()
+			return d, nil
+		case "[":
+			d.cal.prevMonth()
+			d.loading = true
+			return d, d.fetchData()
+		case "]":
+			d.cal.nextMonth()
+			d.loading = true
+			return d, d.fetchData()
+		case "enter":
+			if len(d.cal.selected) > 0 {
+				d.overlay = overlayCalAction
+				d.menuCursor = 0
+				return d, nil
+			}
+			// No selection → open action menu
+			d.overlay = overlayMenu
+			d.menuCursor = 0
+			return d, nil
+		}
 	}
 
 	// ── Global keys ──
@@ -239,7 +319,7 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			d.autoTarget = !*d.autoActive
 			d.overlay = overlayAutoConf
 		} else if d.cfg.GithubFork == "" {
-			d.setFlash("Auto-sign not set up. Run woffuk setup.", true)
+			d.setFlash("Auto-sign not set up. Run woffux setup.", true)
 			return d, d.clearFlashAfter(3 * time.Second)
 		}
 	case "r":
@@ -256,7 +336,7 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			d.setFlash("Opened GitHub Actions in browser", false)
 			return d, d.clearFlashAfter(2 * time.Second)
 		} else {
-			d.setFlash("GitHub not configured — run woffuk setup", true)
+			d.setFlash("GitHub not configured — run woffux setup", true)
 			return d, d.clearFlashAfter(3 * time.Second)
 		}
 	}
@@ -311,6 +391,8 @@ func (d *Dashboard) View() string {
 	switch d.overlay {
 	case overlayMenu:
 		return d.renderOverlayMenu()
+	case overlayCalAction:
+		return d.renderCalActionOverlay()
 	case overlaySignConf:
 		return d.renderOverlayConfirm("Sign now?", "Clock in/out on Woffu right now.", "y/enter", "n/esc")
 	case overlayAutoConf:
@@ -329,9 +411,9 @@ func (d *Dashboard) View() string {
 // ── Render: header ──
 
 func (d *Dashboard) renderHeader() string {
-	name := "woffuk"
+	name := "woffux"
 	if d.profile != nil {
-		name = fmt.Sprintf("woffuk — %s", d.profile.FullName)
+		name = fmt.Sprintf("woffux — %s", d.profile.FullName)
 	}
 	left := sTitle.Render(name)
 	right := sDimmed.Render(time.Now().Format("15:04"))
@@ -469,19 +551,10 @@ func (d *Dashboard) renderEventsTab() string {
 // ── Render: Calendar tab ──
 
 func (d *Dashboard) renderCalendarTab() string {
-	if d.signInfo == nil || len(d.signInfo.NextEvents) == 0 {
-		return "\n" + sDimmed.Render("  No upcoming holidays or events.")
+	if d.cal == nil {
+		return "\n" + sDimmed.Render("  Loading calendar...")
 	}
-
-	var rows []string
-	for _, e := range d.signInfo.NextEvents {
-		name := ""
-		if len(e.Names) > 0 {
-			name = " " + e.Names[0]
-		}
-		rows = append(rows, "  "+sDimmed.Render("  "+e.Date)+name)
-	}
-	return "\n" + sSubtitle.Render("  Upcoming holidays & events") + "\n" + strings.Join(rows, "\n")
+	return "\n" + d.cal.render()
 }
 
 // ── Render: schedule section ──
@@ -548,8 +621,11 @@ func (d *Dashboard) renderHelp() string {
 		}
 	case tabCalendar:
 		hints = []string{
-			hint("r", "refresh"),
-			hint("o", "woffu"),
+			hint("←→↑↓", "navigate"),
+			hint("space", "select"),
+			hint("[/]", "month"),
+			hint("x", "clear"),
+			hint("enter", "action"),
 		}
 	}
 
@@ -700,7 +776,14 @@ func (d *Dashboard) fetchData() tea.Cmd {
 
 		slots, _ := woffu.GetTodaySlots(d.companyClient, token)
 
-		return dataMsg{signInfo: info, events: events, profile: profile, slots: slots}
+		// Calendar for current month (or the month the grid is showing)
+		calMonth := int(time.Now().Month())
+		if d.cal != nil {
+			calMonth = int(d.cal.month)
+		}
+		calDays, _ := woffu.GetCalendarMonth(d.companyClient, token, calMonth)
+
+		return dataMsg{signInfo: info, events: events, profile: profile, slots: slots, calendarDays: calDays}
 	}
 }
 
@@ -771,6 +854,104 @@ func (d *Dashboard) syncGitHub() tea.Cmd {
 		}
 		return syncDoneMsg{}
 	}
+}
+
+// ── Calendar batch actions ──
+
+func (d *Dashboard) getCalActions() []action {
+	n := len(d.cal.selected)
+	return []action{
+		{key: "telework", name: fmt.Sprintf("Request Telework (%d days)", n), desc: "Teletrabajo🏡"},
+		{key: "vacation", name: fmt.Sprintf("Request Vacation (%d days)", n), desc: "Vacaciones"},
+		{key: "personal", name: fmt.Sprintf("Request Personal Day (%d days)", n), desc: "Asuntos Propios"},
+		{key: "hours", name: fmt.Sprintf("Request Hours Pool (%d days)", n), desc: "Bolsa de horas"},
+	}
+}
+
+func (d *Dashboard) executeCalAction(a action) tea.Cmd {
+	dates := d.cal.selectedDates()
+	if len(dates) == 0 {
+		return nil
+	}
+
+	// Map action key to search term for request type
+	typeSearch := map[string]string{
+		"telework": "teletrabajo",
+		"vacation": "vacaciones",
+		"personal": "asuntos propios",
+		"hours":    "bolsa de horas",
+	}
+
+	search := typeSearch[a.key]
+	if search == "" {
+		return nil
+	}
+
+	d.setFlash(fmt.Sprintf("Submitting %d requests...", len(dates)), false)
+
+	return func() tea.Msg {
+		// Get request types
+		types, err := woffu.GetRequestTypes(d.companyClient, d.token)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		// Find matching type
+		var matchedType *woffu.RequestType
+		for i, t := range types {
+			if strings.Contains(strings.ToLower(t.Name), search) {
+				matchedType = &types[i]
+				break
+			}
+		}
+		if matchedType == nil {
+			return errMsg{fmt.Errorf("request type \"%s\" not found", search)}
+		}
+
+		userId, companyId, err := woffu.GetUserIds(d.companyClient, d.token)
+		if err != nil {
+			return errMsg{err}
+		}
+
+		count := 0
+		for _, date := range dates {
+			err := woffu.CreateRequest(d.companyClient, d.token, userId, companyId, matchedType.ID, date, date, matchedType.IsVacation)
+			if err == nil {
+				count++
+			}
+		}
+
+		return requestDoneMsg{count: count}
+	}
+}
+
+func (d *Dashboard) renderCalActionOverlay() string {
+	actions := d.getCalActions()
+
+	var rows []string
+	for i, a := range actions {
+		cursor := "  "
+		style := sDimmed
+		if i == d.menuCursor {
+			cursor = sKey.Render("▸ ")
+			style = sValue
+		}
+		rows = append(rows, cursor+style.Render(a.name))
+	}
+
+	dates := d.cal.selectedDates()
+	title := fmt.Sprintf("  Action for %d selected days", len(dates))
+
+	menuContent := sSection.Render(title) + "\n\n" + strings.Join(rows, "\n") + "\n\n" +
+		sDimmed.Render("  ↑↓ navigate  enter submit  esc cancel")
+
+	menuBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorPrimary).
+		Padding(1, 2).
+		Render(menuContent)
+
+	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, menuBox)
 }
 
 func (d *Dashboard) applyPreset(name string) tea.Cmd {

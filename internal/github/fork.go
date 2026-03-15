@@ -55,7 +55,7 @@ func ForkAndSetup(cfg *config.Config, password string) (string, error) {
 // SyncSecrets re-syncs all GitHub secrets from the current config.
 func SyncSecrets(cfg *config.Config, password string) error {
 	if cfg.GithubFork == "" {
-		return fmt.Errorf("no github fork configured — run 'woffuk setup' first")
+		return fmt.Errorf("no github fork configured — run 'woffux setup' first")
 	}
 	return setSecrets(cfg.GithubFork, cfg, password)
 }
@@ -63,7 +63,7 @@ func SyncSecrets(cfg *config.Config, password string) error {
 // SyncWorkflows regenerates workflows from config and pushes to the fork.
 func SyncWorkflows(cfg *config.Config) error {
 	if cfg.GithubFork == "" {
-		return fmt.Errorf("no github fork configured — run 'woffuk setup' first")
+		return fmt.Errorf("no github fork configured — run 'woffux setup' first")
 	}
 	return pushWorkflows(cfg.GithubFork, cfg)
 }
@@ -96,7 +96,7 @@ func setSecrets(repo string, cfg *config.Config, password string) error {
 
 func pushWorkflows(repo string, cfg *config.Config) error {
 	// Clone the fork to a temp dir
-	tmpDir, err := os.MkdirTemp("", "woffuk-workflows-*")
+	tmpDir, err := os.MkdirTemp("", "woffux-workflows-*")
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 
 	// Commit and push
 	_ = runCmd(tmpDir, "git", "add", ".github/workflows/")
-	_ = runCmd(tmpDir, "git", "commit", "-m", "chore: update auto-sign workflows from woffuk-cli")
+	_ = runCmd(tmpDir, "git", "commit", "-m", "chore: update auto-sign workflows from woffux-cli")
 	if err := runCmd(tmpDir, "git", "push"); err != nil {
 		return fmt.Errorf("push workflows: %w", err)
 	}

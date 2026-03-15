@@ -16,10 +16,10 @@ var openCmd = &cobra.Command{
 	Long: `Open Woffu pages in your browser.
 
 Examples:
-  woffuk open              Dashboard
-  woffuk open docs         Personal documents
-  woffuk open calendar     Calendar view
-  woffuk open github       GitHub fork actions`,
+  woffux open              Dashboard
+  woffux open docs         Personal documents
+  woffux open calendar     Calendar view
+  woffux open github       GitHub fork actions`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
@@ -42,7 +42,7 @@ Examples:
 			if cfg.GithubFork != "" {
 				url = "https://github.com/" + cfg.GithubFork + "/actions"
 			} else {
-				return fmt.Errorf("no GitHub fork configured — run 'woffuk setup'")
+				return fmt.Errorf("no GitHub fork configured — run 'woffux setup'")
 			}
 		case "profile":
 			url = cfg.WoffuCompanyURL + "/v2/personal/profile"

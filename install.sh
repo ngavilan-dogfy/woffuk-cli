@@ -34,7 +34,7 @@ case "$OS" in
     ;;
 esac
 
-BINARY="woffuk-${OS}-${ARCH}"
+BINARY="woffux-${OS}-${ARCH}"
 
 # Get latest release
 printf "  ${DIM}Finding latest release...${NC}\n"
@@ -49,43 +49,43 @@ fi
 URL="https://github.com/${REPO}/releases/download/${TAG}/${BINARY}"
 
 printf "\n"
-printf "  ${BOLD}woffuk ${TAG}${NC}\n"
+printf "  ${BOLD}woffux ${TAG}${NC}\n"
 printf "  ${DIM}${OS}/${ARCH}${NC}\n"
 printf "\n"
 printf "  ${DIM}Downloading from GitHub...${NC}\n"
 
-HTTP_CODE=$(curl -fsSL -w "%{http_code}" "$URL" -o /tmp/woffuk 2>/dev/null || echo "000")
+HTTP_CODE=$(curl -fsSL -w "%{http_code}" "$URL" -o /tmp/woffux 2>/dev/null || echo "000")
 
-if [ "$HTTP_CODE" != "200" ] && [ ! -s /tmp/woffuk ]; then
+if [ "$HTTP_CODE" != "200" ] && [ ! -s /tmp/woffux ]; then
   printf "  ${RED}✗${NC} Download failed (HTTP ${HTTP_CODE})\n"
   printf "  ${DIM}Binary '${BINARY}' not found in release ${TAG}${NC}\n"
   printf "  ${DIM}Download manually: https://github.com/${REPO}/releases/tag/${TAG}${NC}\n"
   exit 1
 fi
 
-chmod +x /tmp/woffuk
+chmod +x /tmp/woffux
 
 # Verify it's actually an executable
-if ! file /tmp/woffuk | grep -q "executable\|Mach-O"; then
+if ! file /tmp/woffux | grep -q "executable\|Mach-O"; then
   printf "  ${RED}✗${NC} Downloaded file is not a valid binary.\n"
   printf "  ${DIM}This can happen if the release is still being built.${NC}\n"
   printf "  ${DIM}Try again in a few minutes or download manually:${NC}\n"
   printf "  ${DIM}https://github.com/${REPO}/releases/tag/${TAG}${NC}\n"
-  rm -f /tmp/woffuk
+  rm -f /tmp/woffux
   exit 1
 fi
 
-printf "  ${DIM}Installing to ${INSTALL_DIR}/woffuk...${NC}\n"
+printf "  ${DIM}Installing to ${INSTALL_DIR}/woffux...${NC}\n"
 
 if [ -w "$INSTALL_DIR" ]; then
-  mv /tmp/woffuk "${INSTALL_DIR}/woffuk"
+  mv /tmp/woffux "${INSTALL_DIR}/woffux"
 else
-  sudo mv /tmp/woffuk "${INSTALL_DIR}/woffuk"
+  sudo mv /tmp/woffux "${INSTALL_DIR}/woffux"
 fi
 
 printf "\n"
-printf "  ${GREEN}✓${NC} ${BOLD}woffuk ${TAG}${NC} installed\n"
-printf "  ${DIM}${INSTALL_DIR}/woffuk${NC}\n"
+printf "  ${GREEN}✓${NC} ${BOLD}woffux ${TAG}${NC} installed\n"
+printf "  ${DIM}${INSTALL_DIR}/woffux${NC}\n"
 printf "\n"
-printf "  Next: ${BOLD}woffuk setup${NC}\n"
+printf "  Next: ${BOLD}woffux setup${NC}\n"
 printf "\n"

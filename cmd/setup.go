@@ -41,7 +41,7 @@ var setupCmd = &cobra.Command{
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	fmt.Println(sTitle.Render("woffuk setup"))
+	fmt.Println(sTitle.Render("woffux setup"))
 
 	// Check gh is installed
 	if err := checkGhInstalled(); err != nil {
@@ -203,7 +203,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	printSetupSchedule(schedule)
 	fmt.Println()
-	fmt.Printf("  Run %s to open the dashboard.\n\n", sBold.Render("woffuk"))
+	fmt.Printf("  Run %s to open the dashboard.\n\n", sBold.Render("woffux"))
 
 	return nil
 }
@@ -714,7 +714,7 @@ func checkGhInstalled() error {
 	if err != nil {
 		fmt.Println()
 		fmt.Printf("  %s GitHub CLI (gh) is not installed.\n\n", sErr.Render("✗"))
-		fmt.Printf("  woffuk needs %s to set up auto-signing via GitHub Actions.\n\n", sBold.Render("gh"))
+		fmt.Printf("  woffux needs %s to set up auto-signing via GitHub Actions.\n\n", sBold.Render("gh"))
 
 		detected := detectOS()
 
@@ -731,7 +731,7 @@ func checkGhInstalled() error {
 		}
 
 		fmt.Printf("  Then authenticate: %s\n\n", sBold.Render("gh auth login"))
-		return fmt.Errorf("gh CLI required — install it and run 'woffuk setup' again")
+		return fmt.Errorf("gh CLI required — install it and run 'woffux setup' again")
 	}
 
 	// Check if gh is authenticated
@@ -758,11 +758,11 @@ func checkGhInstalled() error {
 			loginCmd.Stdout = os.Stdout
 			loginCmd.Stderr = os.Stderr
 			if err := loginCmd.Run(); err != nil {
-				return fmt.Errorf("gh auth login failed — try manually and run 'woffuk setup' again")
+				return fmt.Errorf("gh auth login failed — try manually and run 'woffux setup' again")
 			}
 			fmt.Println()
 		} else {
-			return fmt.Errorf("run 'gh auth login' first, then 'woffuk setup'")
+			return fmt.Errorf("run 'gh auth login' first, then 'woffux setup'")
 		}
 	}
 	_ = authOut
@@ -911,7 +911,7 @@ func telegramSetup() (config.TelegramConfig, error) {
 
 	if testResult != nil {
 		fmt.Printf("  %s Test failed: %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("✗"), testResult)
-		fmt.Printf("     Check your token and chat ID. You can reconfigure later in ~/.woffuk.yaml\n\n")
+		fmt.Printf("     Check your token and chat ID. You can reconfigure later in ~/.woffux.yaml\n\n")
 	} else {
 		fmt.Printf("  %s Test message sent! Check your Telegram.\n\n", sOk)
 	}
@@ -921,7 +921,7 @@ func telegramSetup() (config.TelegramConfig, error) {
 
 func sendTestTelegram(cfg config.TelegramConfig) error {
 	// Reuse the notify package
-	body := fmt.Sprintf(`{"chat_id":"%s","text":"✅ woffuk connected! You'll receive notifications here."}`, cfg.ChatID)
+	body := fmt.Sprintf(`{"chat_id":"%s","text":"✅ woffux connected! You'll receive notifications here."}`, cfg.ChatID)
 	resp, err := http.Post(
 		fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.BotToken),
 		"application/json",

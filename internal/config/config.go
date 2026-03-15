@@ -81,7 +81,7 @@ func configPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot find home directory: %w", err)
 	}
-	return filepath.Join(home, ".woffuk.yaml"), nil
+	return filepath.Join(home, ".woffux.yaml"), nil
 }
 
 func Load() (*Config, error) {
@@ -93,7 +93,7 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config not found — run 'woffuk setup' first")
+			return nil, fmt.Errorf("config not found — run 'woffux setup' first")
 		}
 		return nil, fmt.Errorf("cannot read config: %w", err)
 	}
@@ -124,7 +124,7 @@ func LoadOrEnv() (*Config, string, error) {
 	password := os.Getenv("WOFFU_PASSWORD")
 
 	if url == "" || companyURL == "" || email == "" || password == "" {
-		return nil, "", fmt.Errorf("config not found and WOFFU_* env vars not set — run 'woffuk setup' or set environment variables")
+		return nil, "", fmt.Errorf("config not found and WOFFU_* env vars not set — run 'woffux setup' or set environment variables")
 	}
 
 	lat, _ := strconv.ParseFloat(os.Getenv("WOFFU_LATITUDE"), 64)

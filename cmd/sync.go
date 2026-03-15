@@ -23,10 +23,10 @@ What it does:
 
 When to use it:
   • After changing your password, coordinates, or schedule
-  • After editing ~/.woffuk.yaml manually
+  • After editing ~/.woffux.yaml manually
   • If auto-signing is using outdated settings
 
-Your local config (~/.woffuk.yaml) is the source of truth.
+Your local config (~/.woffux.yaml) is the source of truth.
 This command makes GitHub match it.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
@@ -39,13 +39,13 @@ This command makes GitHub match it.`,
 			fmt.Printf("  %s GitHub is not configured.\n",
 				lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("!"))
 			fmt.Printf("  Run %s to set up auto-signing.\n\n",
-				lipgloss.NewStyle().Bold(true).Render("woffuk setup"))
+				lipgloss.NewStyle().Bold(true).Render("woffux setup"))
 			return nil
 		}
 
 		password, err := config.GetPassword(cfg.WoffuEmail)
 		if err != nil {
-			return fmt.Errorf("cannot get password from keychain: %w\n\n  Run 'woffuk setup' to reconfigure", err)
+			return fmt.Errorf("cannot get password from keychain: %w\n\n  Run 'woffux setup' to reconfigure", err)
 		}
 
 		sLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(22)
@@ -103,7 +103,7 @@ This command makes GitHub match it.`,
 		} else {
 			fmt.Printf("  %s Some items failed. Run %s to retry.\n\n",
 				sErrIcon.Render("!"),
-				lipgloss.NewStyle().Bold(true).Render("woffuk sync"))
+				lipgloss.NewStyle().Bold(true).Render("woffux sync"))
 		}
 
 		return nil

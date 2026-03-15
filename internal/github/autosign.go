@@ -76,7 +76,7 @@ func EnableAutoSign(repo string) error {
 	}
 
 	if changed == 0 {
-		return fmt.Errorf("no sign workflows found on %s — run 'woffuk setup' first", repo)
+		return fmt.Errorf("no sign workflows found on %s — run 'woffux setup' first", repo)
 	}
 
 	return nil
@@ -102,7 +102,7 @@ func DisableAutoSign(repo string) error {
 	}
 
 	if changed == 0 {
-		return fmt.Errorf("no sign workflows found on %s — run 'woffuk setup' first", repo)
+		return fmt.Errorf("no sign workflows found on %s — run 'woffux setup' first", repo)
 	}
 
 	return nil

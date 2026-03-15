@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" alt="woffuk" width="280">
+  <img src="assets/logo.png" alt="woffux" width="280">
 </p>
 
-<h1 align="center">woffuk</h1>
+<h1 align="center">woffux</h1>
 
 <p align="center">Automatic clock in/out for <a href="https://app.woffu.com">Woffu</a>. Set it up once, never think about it again.</p>
 
@@ -45,14 +45,14 @@ Go to [Releases](https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest) a
 
 | Platform | File |
 |---|---|
-| macOS Apple Silicon (M1+) | `woffuk-darwin-arm64` |
-| macOS Intel | `woffuk-darwin-amd64` |
-| Linux x64 | `woffuk-linux-amd64` |
-| Linux ARM64 | `woffuk-linux-arm64` |
+| macOS Apple Silicon (M1+) | `woffux-darwin-arm64` |
+| macOS Intel | `woffux-darwin-amd64` |
+| Linux x64 | `woffux-linux-amd64` |
+| Linux ARM64 | `woffux-linux-arm64` |
 
 ```bash
-chmod +x woffuk-darwin-arm64
-sudo mv woffuk-darwin-arm64 /usr/local/bin/woffuk
+chmod +x woffux-darwin-arm64
+sudo mv woffux-darwin-arm64 /usr/local/bin/woffux
 ```
 
 </details>
@@ -61,16 +61,16 @@ sudo mv woffuk-darwin-arm64 /usr/local/bin/woffuk
 <summary><strong>Build from source (Go 1.24+)</strong></summary>
 
 ```bash
-go install github.com/ngavilan-dogfy/woffuk-cli/cmd/woffuk@latest
+go install github.com/ngavilan-dogfy/woffuk-cli/cmd/woffux@latest
 ```
 
 Or clone and build:
 
 ```bash
 git clone https://github.com/ngavilan-dogfy/woffuk-cli.git
-cd woffuk-cli
-go build -o woffuk ./cmd/woffuk
-sudo mv woffuk /usr/local/bin/
+cd woffux-cli
+go build -o woffux ./cmd/woffux
+sudo mv woffux /usr/local/bin/
 ```
 
 </details>
@@ -90,19 +90,19 @@ Then: `gh auth login`
 ### Update
 
 ```bash
-woffuk update
+woffux update
 ```
 
 ## Setup
 
 ```bash
-woffuk setup
+woffux setup
 ```
 
 You only need your **email** and **password**. The wizard auto-detects everything else:
 
 ```
-woffuk setup
+woffux setup
 
   ✓ GitHub CLI ready
 
@@ -136,43 +136,43 @@ All set!
 
 | Command | Description | Flags |
 |---|---|---|
-| `woffuk status` | Today: working day, mode, coordinates | `--json` `--plain` |
-| `woffuk today` | Detailed day info + today's sign slots | `--json` |
-| `woffuk events` | Remaining vacations, hours, personal days | `--json` `--plain` |
-| `woffuk requests` | Your requests (telework, vacation, absence) | `--json` `--plain` `--page` `--size` |
-| `woffuk history` | Sign history (clock in/out records) | `--json` `--plain` `--from` `--to` `-d` |
-| `woffuk calendar` | Working days, holidays, telework for a month | `--json` `--plain` `-m` |
-| `woffuk holidays` | Company calendar holidays | `--json` `--plain` |
-| `woffuk schedule` | View auto-sign schedule | `--json` |
-| `woffuk whoami` | Current user profile | `--json` |
+| `woffux status` | Today: working day, mode, coordinates | `--json` `--plain` |
+| `woffux today` | Detailed day info + today's sign slots | `--json` |
+| `woffux events` | Remaining vacations, hours, personal days | `--json` `--plain` |
+| `woffux requests` | Your requests (telework, vacation, absence) | `--json` `--plain` `--page` `--size` |
+| `woffux history` | Sign history (clock in/out records) | `--json` `--plain` `--from` `--to` `-d` |
+| `woffux calendar` | Working days, holidays, telework for a month | `--json` `--plain` `-m` |
+| `woffux holidays` | Company calendar holidays | `--json` `--plain` |
+| `woffux schedule` | View auto-sign schedule | `--json` |
+| `woffux whoami` | Current user profile | `--json` |
 
 ### Actions
 
 | Command | Description |
 |---|---|
-| `woffuk sign` | Clock in/out right now |
-| `woffuk sign --force` | Sign even on non-working days |
-| `woffuk request` | Create a request (telework, vacation, absence) |
-| `woffuk request -t Teletrabajo -d 2026-03-20` | Request telework for a specific date |
-| `woffuk request cancel <id>` | Cancel a request |
-| `woffuk auto` | Check if auto-signing is active |
-| `woffuk auto on` / `off` | Toggle auto-signing |
-| `woffuk open` | Open Woffu dashboard in browser |
-| `woffuk open docs` | Open personal documents |
-| `woffuk open calendar` | Open calendar view |
-| `woffuk open github` | Open GitHub fork actions |
+| `woffux sign` | Clock in/out right now |
+| `woffux sign --force` | Sign even on non-working days |
+| `woffux request` | Create a request (telework, vacation, absence) |
+| `woffux request -t Teletrabajo -d 2026-03-20` | Request telework for a specific date |
+| `woffux request cancel <id>` | Cancel a request |
+| `woffux auto` | Check if auto-signing is active |
+| `woffux auto on` / `off` | Toggle auto-signing |
+| `woffux open` | Open Woffu dashboard in browser |
+| `woffux open docs` | Open personal documents |
+| `woffux open calendar` | Open calendar view |
+| `woffux open github` | Open GitHub fork actions |
 
 ### Configuration
 
 | Command | Description |
 |---|---|
-| `woffuk setup` | Full setup wizard |
-| `woffuk config` | View all settings at a glance |
-| `woffuk config edit` | Change any individual setting |
-| `woffuk schedule edit` | Edit schedule with presets or custom blocks |
-| `woffuk sync` | Push local config to GitHub |
-| `woffuk update` | Update to latest version |
-| `woffuk --version` | Show current version |
+| `woffux setup` | Full setup wizard |
+| `woffux config` | View all settings at a glance |
+| `woffux config edit` | Change any individual setting |
+| `woffux schedule edit` | Edit schedule with presets or custom blocks |
+| `woffux sync` | Push local config to GitHub |
+| `woffux update` | Update to latest version |
+| `woffux --version` | Show current version |
 
 ## Output modes
 
@@ -189,31 +189,31 @@ All query commands auto-detect your terminal:
 
 ```bash
 # How many vacation days left?
-woffuk events --json | jq '.[] | select(.name == "Vacaciones") | .available'
+woffux events --json | jq '.[] | select(.name == "Vacaciones") | .available'
 
 # Approved telework days this month
-woffuk requests --json | jq '[.[] | select(.event_name | contains("Teletrabajo")) | select(.status == "approved")] | length'
+woffux requests --json | jq '[.[] | select(.event_name | contains("Teletrabajo")) | select(.status == "approved")] | length'
 
 # Next holiday
-woffuk holidays --json | jq '.[0]'
+woffux holidays --json | jq '.[0]'
 
 # Export calendar to CSV
-woffuk calendar --plain > march.tsv
+woffux calendar --plain > march.tsv
 
 # Am I clocked in right now?
-woffuk today --json | jq '.slots[-1].out // "still clocked in"'
+woffux today --json | jq '.slots[-1].out // "still clocked in"'
 
 # Request telework for next week
-woffuk request -t Teletrabajo -d 2026-03-23,2026-03-25,2026-03-27
+woffux request -t Teletrabajo -d 2026-03-23,2026-03-25,2026-03-27
 
 # Cancel all pending requests
-woffuk requests --json | jq -r '.[] | select(.status == "pending") | .request_id' | xargs -I{} woffuk request cancel {}
+woffux requests --json | jq -r '.[] | select(.status == "pending") | .request_id' | xargs -I{} woffux request cancel {}
 ```
 
 ## Interactive TUI
 
 ```bash
-woffuk
+woffux
 ```
 
 Multi-tab dashboard with live data:
@@ -237,7 +237,7 @@ Keyboard shortcuts:
 
 ## Auto-signing
 
-GitHub Actions clocks you in/out on schedule. Toggle with `woffuk auto on/off`.
+GitHub Actions clocks you in/out on schedule. Toggle with `woffux auto on/off`.
 
 | Day | Default times (CET) |
 |---|---|
@@ -260,12 +260,12 @@ Custom schedules support multi-select days, per-day blocks, and can be saved as 
 
 ### Syncing
 
-Your local config (`~/.woffuk.yaml`) is the source of truth. Run `woffuk sync` to push changes to GitHub so auto-signing uses your latest settings.
+Your local config (`~/.woffux.yaml`) is the source of truth. Run `woffux sync` to push changes to GitHub so auto-signing uses your latest settings.
 
 ```bash
-woffuk sync
+woffux sync
 
-  Syncing local config → yourusername/woffuk-cli
+  Syncing local config → yourusername/woffux-cli
 
   ✓ Secrets               email, password, office (41.35,2.14), home (41.19,1.60)
   ✓ Workflows             5 days, 3 signs/day, tz=CET
@@ -287,19 +287,19 @@ Create and cancel telework, vacation, and absence requests directly from the CLI
 
 ```bash
 # Interactive — pick type and dates
-woffuk request
+woffux request
 
 # One-liner
-woffuk request -t "Teletrabajo🏡" -d 2026-03-20
+woffux request -t "Teletrabajo🏡" -d 2026-03-20
 
 # Batch — multiple dates
-woffuk request -t Vacaciones -d 2026-08-01,2026-08-02,2026-08-03,2026-08-04,2026-08-05
+woffux request -t Vacaciones -d 2026-08-01,2026-08-02,2026-08-03,2026-08-04,2026-08-05
 
 # List your requests
-woffuk requests
+woffux requests
 
 # Cancel a request
-woffuk request cancel 17117405
+woffux request cancel 17117405
 ```
 
 ## Telegram notifications
@@ -318,15 +318,15 @@ The setup wizard walks you through creating a bot with @BotFather and verifies t
 
 | What | Where |
 |---|---|
-| Config | `~/.woffuk.yaml` |
+| Config | `~/.woffux.yaml` |
 | Password | OS keychain (macOS Keychain / Linux keyring) |
-| GitHub secrets | Set automatically by `woffuk setup` and `woffuk sync` |
+| GitHub secrets | Set automatically by `woffux setup` and `woffux sync` |
 
-View with `woffuk config`. Edit individual settings with `woffuk config edit` — it explains when and why to sync after changes.
+View with `woffux config`. Edit individual settings with `woffux config edit` — it explains when and why to sync after changes.
 
 ### Environment variables (CI)
 
-Used by GitHub Actions. Set automatically by `woffuk setup`.
+Used by GitHub Actions. Set automatically by `woffux setup`.
 
 | Variable | Required | Description |
 |---|---|---|
@@ -345,16 +345,16 @@ Used by GitHub Actions. Set automatically by `woffuk setup`.
 
 | Problem | Solution |
 |---|---|
-| `woffuk: command not found` | Binary not in PATH — `sudo mv woffuk /usr/local/bin/` |
-| `config not found` | Run `woffuk setup` |
-| `password not in keychain` | Run `woffuk setup` to reconfigure |
-| Auth fails after password change | `woffuk config edit` → Password → sync |
-| Auto-signing stopped | `woffuk auto` to check. Keepalive prevents 60-day disable |
-| Wrong coordinates | `woffuk config edit` → Office/Home → sync |
-| Telegram not working | `woffuk config edit` → Telegram → sync |
-| Changes not taking effect | Run `woffuk sync` — local config must be pushed to GitHub |
+| `woffux: command not found` | Binary not in PATH — `sudo mv woffux /usr/local/bin/` |
+| `config not found` | Run `woffux setup` |
+| `password not in keychain` | Run `woffux setup` to reconfigure |
+| Auth fails after password change | `woffux config edit` → Password → sync |
+| Auto-signing stopped | `woffux auto` to check. Keepalive prevents 60-day disable |
+| Wrong coordinates | `woffux config edit` → Office/Home → sync |
+| Telegram not working | `woffux config edit` → Telegram → sync |
+| Changes not taking effect | Run `woffux sync` — local config must be pushed to GitHub |
 | `gh` not installed | Setup wizard guides you through installation |
-| Multiple GitHub accounts | `gh auth switch` to the right account, then `woffuk sync` |
+| Multiple GitHub accounts | `gh auth switch` to the right account, then `woffux sync` |
 
 ## License
 

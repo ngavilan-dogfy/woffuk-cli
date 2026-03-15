@@ -21,11 +21,11 @@ var signCmd = &cobra.Command{
 	Long: `Clock in/out on Woffu. Checks calendar first and only signs on working days.
 
 Examples:
-  woffuk sign                Sign for today
-  woffuk sign --force        Sign even if not a working day
+  woffux sign                Sign for today
+  woffux sign --force        Sign even if not a working day
 
 Batch (from stdin):
-  echo "sign" | woffuk sign
+  echo "sign" | woffux sign
 
 In CI, reads credentials from environment variables.`,
 	RunE: func(cmd *cobra.Command, args []string) error {

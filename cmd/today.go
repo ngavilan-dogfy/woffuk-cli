@@ -17,8 +17,8 @@ var todayCmd = &cobra.Command{
 	Long: `Show detailed info about today: schedule, sign slots, and working status.
 
 Examples:
-  woffuk today
-  woffuk today --json`,
+  woffux today
+  woffux today --json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -30,7 +30,7 @@ Examples:
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		// Get sign info

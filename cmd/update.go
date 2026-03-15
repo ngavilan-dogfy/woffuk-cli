@@ -17,7 +17,7 @@ var Version = "dev"
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update woffuk to the latest version",
+	Short: "Update woffux to the latest version",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sLabel := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
@@ -69,19 +69,19 @@ var updateCmd = &cobra.Command{
 		}
 
 		// Download
-		binary := fmt.Sprintf("woffuk-%s-%s", runtime.GOOS, goArch())
+		binary := fmt.Sprintf("woffux-%s-%s", runtime.GOOS, goArch())
 		url := fmt.Sprintf("https://github.com/ngavilan-dogfy/woffuk-cli/releases/download/%s/%s", latestTag, binary)
 
 		var downloadErr error
 		spinner.New().
 			Title(fmt.Sprintf("Downloading %s...", latestTag)).
 			Action(func() {
-				dl := exec.Command("curl", "-fsSL", url, "-o", "/tmp/woffuk-update")
+				dl := exec.Command("curl", "-fsSL", url, "-o", "/tmp/woffux-update")
 				if out, err := dl.CombinedOutput(); err != nil {
 					downloadErr = fmt.Errorf("download failed: %s", string(out))
 					return
 				}
-				exec.Command("chmod", "+x", "/tmp/woffuk-update").Run()
+				exec.Command("chmod", "+x", "/tmp/woffux-update").Run()
 			}).
 			Run()
 
@@ -94,22 +94,22 @@ var updateCmd = &cobra.Command{
 		// Install — needs to happen outside spinner so sudo can prompt
 		currentPath, err := os.Executable()
 		if err != nil {
-			currentPath = "/usr/local/bin/woffuk"
+			currentPath = "/usr/local/bin/woffux"
 		}
 
 		// Try without sudo first
-		mv := exec.Command("mv", "/tmp/woffuk-update", currentPath)
+		mv := exec.Command("mv", "/tmp/woffux-update", currentPath)
 		if err := mv.Run(); err != nil {
 			// Needs sudo — tell the user and run with TTY
 			fmt.Printf("  %s Installing to %s (requires sudo)\n", sInfo, currentPath)
-			sudoMv := exec.Command("sudo", "mv", "/tmp/woffuk-update", currentPath)
+			sudoMv := exec.Command("sudo", "mv", "/tmp/woffux-update", currentPath)
 			sudoMv.Stdin = os.Stdin
 			sudoMv.Stdout = os.Stdout
 			sudoMv.Stderr = os.Stderr
 			if err := sudoMv.Run(); err != nil {
 				fmt.Printf("\n  %s Install failed. Try manually:\n",
 					lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("✗"))
-				fmt.Printf("    sudo mv /tmp/woffuk-update %s\n\n", currentPath)
+				fmt.Printf("    sudo mv /tmp/woffux-update %s\n\n", currentPath)
 				return nil
 			}
 		}

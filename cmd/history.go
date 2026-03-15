@@ -24,10 +24,10 @@ var historyCmd = &cobra.Command{
 	Long: `View past clock in/out records.
 
 Examples:
-  woffuk history                  Last 7 days
-  woffuk history -d 30            Last 30 days
-  woffuk history --from 2026-03-01
-  woffuk history --json | jq '.[].date'`,
+  woffux history                  Last 7 days
+  woffux history -d 30            Last 30 days
+  woffux history --from 2026-03-01
+  woffux history --json | jq '.[].date'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -39,7 +39,7 @@ Examples:
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		// Resolve date range

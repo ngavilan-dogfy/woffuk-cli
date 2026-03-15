@@ -23,10 +23,10 @@ var requestCmd = &cobra.Command{
 	Long: `Submit or cancel requests on Woffu.
 
 Examples:
-  woffuk request                                  Interactive — pick type and dates
-  woffuk request --type "Teletrabajo🏡" --dates 2026-03-20
-  woffuk request --type Vacaciones --dates 2026-04-07,2026-04-08,2026-04-09
-  woffuk request cancel 17117405                  Cancel a request by ID`,
+  woffux request                                  Interactive — pick type and dates
+  woffux request --type "Teletrabajo🏡" --dates 2026-03-20
+  woffux request --type Vacaciones --dates 2026-04-07,2026-04-08,2026-04-09
+  woffux request cancel 17117405                  Cancel a request by ID`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -38,7 +38,7 @@ Examples:
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		// Get request types
@@ -63,7 +63,7 @@ Examples:
 				}
 			}
 			if selectedType == nil {
-				return fmt.Errorf("request type \"%s\" not found. Run 'woffuk request' interactively to see available types", requestType)
+				return fmt.Errorf("request type \"%s\" not found. Run 'woffux request' interactively to see available types", requestType)
 			}
 		} else {
 			// Interactive: pick type
@@ -139,8 +139,8 @@ var requestCancelCmd = &cobra.Command{
 	Short: "Cancel a request",
 	Long: `Cancel/withdraw a request by its ID.
 
-Find the ID with:  woffuk requests
-                   woffuk requests --json | jq '.[].request_id'`,
+Find the ID with:  woffux requests
+                   woffux requests --json | jq '.[].request_id'`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()

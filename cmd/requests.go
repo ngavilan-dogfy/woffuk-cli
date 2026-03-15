@@ -23,10 +23,10 @@ var requestsCmd = &cobra.Command{
 	Long: `View your submitted requests on Woffu.
 
 Examples:
-  woffuk requests                     Last 50 requests
-  woffuk requests --page 2            Page 2
-  woffuk requests --json | jq '.[] | select(.status == "approved")'
-  woffuk requests --plain | grep Vacaciones`,
+  woffux requests                     Last 50 requests
+  woffux requests --page 2            Page 2
+  woffux requests --json | jq '.[] | select(.status == "approved")'
+  woffux requests --plain | grep Vacaciones`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -38,7 +38,7 @@ Examples:
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		userId, _, err := woffu.GetUserId(companyClient, token)

@@ -23,9 +23,9 @@ var calendarCmd = &cobra.Command{
 	Long: `Show calendar with working days, holidays, absences, and telework.
 
 Examples:
-  woffuk calendar                  Current month
-  woffuk calendar -m 4             April
-  woffuk calendar --json | jq '.[] | select(.is_holiday)'`,
+  woffux calendar                  Current month
+  woffux calendar -m 4             April
+  woffux calendar --json | jq '.[] | select(.is_holiday)'`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -37,7 +37,7 @@ Examples:
 
 		token, err := woffu.Authenticate(client, companyClient, cfg.WoffuEmail, password)
 		if err != nil {
-			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffuk setup'", err)
+			return fmt.Errorf("auth failed: %w\n\n  If your credentials changed, run 'woffux setup'", err)
 		}
 
 		days, err := woffu.GetCalendarMonth(companyClient, token, calendarMonth)

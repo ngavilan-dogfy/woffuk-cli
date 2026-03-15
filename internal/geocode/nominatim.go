@@ -33,7 +33,7 @@ func Search(query string, limit int) ([]Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "woffuk-cli/1.0 (github.com/ngavilan-dogfy/woffuk-cli)")
+	req.Header.Set("User-Agent", "woffux-cli/1.0 (github.com/ngavilan-dogfy/woffuk-cli)")
 	req.Header.Set("Accept-Language", "es,en")
 
 	resp, err := http.DefaultClient.Do(req)

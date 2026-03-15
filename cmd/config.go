@@ -62,8 +62,8 @@ var configCmd = &cobra.Command{
 
 		fmt.Println()
 		fmt.Printf("  Edit: %s    Auto-sign: %s / %s\n\n",
-			lipgloss.NewStyle().Bold(true).Render("woffuk config edit"),
-			lipgloss.NewStyle().Bold(true).Render("woffuk auto on"),
+			lipgloss.NewStyle().Bold(true).Render("woffux config edit"),
+			lipgloss.NewStyle().Bold(true).Render("woffux auto on"),
 			lipgloss.NewStyle().Bold(true).Render("off"))
 
 		return nil
@@ -160,7 +160,7 @@ var configEditCmd = &cobra.Command{
 		case "github":
 			fmt.Printf("\n  Current fork: %s\n", cfg.GithubFork)
 			fmt.Printf("  To re-sync secrets and workflows, run: %s\n\n",
-				lipgloss.NewStyle().Bold(true).Render("woffuk sync"))
+				lipgloss.NewStyle().Bold(true).Render("woffux sync"))
 			return nil
 		}
 
@@ -185,7 +185,7 @@ var configEditCmd = &cobra.Command{
 							Title("Push changes to GitHub now?").
 							Description(fmt.Sprintf("This updates secrets and workflows on %s", cfg.GithubFork)).
 							Affirmative("Sync now").
-							Negative("I'll do it later (woffuk sync)").
+							Negative("I'll do it later (woffux sync)").
 							Value(&sync),
 					),
 				).Run()
@@ -213,7 +213,7 @@ var configEditCmd = &cobra.Command{
 				} else {
 					fmt.Printf("\n  %s Remember to run %s when you're ready.\n",
 						lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("!"),
-						lipgloss.NewStyle().Bold(true).Render("woffuk sync"))
+						lipgloss.NewStyle().Bold(true).Render("woffux sync"))
 					fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
 						"  Until then, auto-signing uses the previous settings."))
 				}

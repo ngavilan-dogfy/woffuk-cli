@@ -18,16 +18,16 @@ jobs:
     name: Sign in Woffu
     runs-on: ubuntu-latest
     steps:
-      - name: Download woffuk
+      - name: Download woffux
         run: |
-          curl -fsSL "https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest/download/woffuk-linux-amd64" -o woffuk
-          chmod +x woffuk
+          curl -fsSL "https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest/download/woffux-linux-amd64" -o woffux
+          chmod +x woffux
 
       - name: Random delay (2-5 min)
         run: sleep $(( RANDOM % 181 + 120 ))
 
       - name: Sign
-        run: ./woffuk sign
+        run: ./woffux sign
         env:
           WOFFU_URL: ${{ secrets.WOFFU_URL }}
           WOFFU_COMPANY_URL: ${{ secrets.WOFFU_COMPANY_URL }}
