@@ -75,11 +75,8 @@ func Authenticate(client *Client, companyClient *Client, email, password string)
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == 400 || resp.StatusCode == 401 {
-		bodyStr := string(body)
-		if strings.Contains(bodyStr, "invalid_grant") || strings.Contains(bodyStr, "invalid_password") || strings.Contains(bodyStr, "Unauthorized") {
-			return "", &AuthError{Kind: ErrBadPassword, Detail: "wrong password", Wrapped: fmt.Errorf("%s", bodyStr)}
-		}
-		return "", &AuthError{Kind: ErrBadEmail, Detail: fmt.Sprintf("login failed for \"%s\"", email), Wrapped: fmt.Errorf("%s", bodyStr)}
+		// Steps 1-2 passed, so the email is valid. Any error here is a password issue.
+		return "", &AuthError{Kind: ErrBadPassword, Detail: "wrong password", Wrapped: fmt.Errorf("status %d: %s", resp.StatusCode, string(body))}
 	}
 
 	// Extract cookies
