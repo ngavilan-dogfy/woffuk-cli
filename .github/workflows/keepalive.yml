@@ -1,11 +1,8 @@
 name: Keepalive
 
-# GitHub auto-disables scheduled workflows after 60 days of repo inactivity.
-# This workflow prevents that by making a dummy commit every 50 days.
-
 on:
   schedule:
-    - cron: '0 12 1 */2 *'  # 1st of every other month at noon
+    - cron: '0 12 1 */2 *'
 
 jobs:
   keepalive:
@@ -15,7 +12,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
       - name: Keepalive commit
         run: |
           git config user.name "github-actions[bot]"

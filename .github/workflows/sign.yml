@@ -2,14 +2,12 @@ name: Auto Sign
 
 on:
   schedule:
-    # Monday-Thursday
-    - cron: '30 7 * * 1-4'   # 08:30 CET
-    - cron: '30 12 * * 1-4'  # 13:30 CET
-    - cron: '15 13 * * 1-4'  # 14:15 CET
-    - cron: '30 16 * * 1-4'  # 17:30 CET
-    # Friday
-    - cron: '0 7 * * 5'      # 08:00 CET
-    - cron: '0 14 * * 5'     # 15:00 CET
+    - cron: '30 7 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 08:30 (UTC+1 → 08:30 local)
+    - cron: '30 12 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 13:30 (UTC+1 → 13:30 local)
+    - cron: '15 13 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 14:15 (UTC+1 → 14:15 local)
+    - cron: '30 16 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 17:30 (UTC+1 → 17:30 local)
+    - cron: '0 7 * * 5'  # Fri 08:00 (UTC+1 → 08:00 local)
+    - cron: '0 14 * * 5'  # Fri 15:00 (UTC+1 → 15:00 local)
 
 concurrency:
   group: sign
