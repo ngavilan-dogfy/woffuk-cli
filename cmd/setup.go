@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -118,35 +121,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	// ── Step 6: Telegram ───────────────────────────────────────────
 
-	var wantTelegram bool
-	var telegramToken, telegramChatID string
-
-	huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Enable Telegram notifications?").
-				Description("Get a message every time you clock in").
-				Affirmative("Yes").
-				Negative("Skip").
-				Value(&wantTelegram),
-		),
-	).Run()
-
-	var telegramCfg config.TelegramConfig
-	if wantTelegram {
-		huh.NewForm(
-			huh.NewGroup(
-				huh.NewInput().
-					Title("Bot Token").
-					Description("Create one at @BotFather").
-					Value(&telegramToken),
-				huh.NewInput().
-					Title("Chat ID").
-					Description("Get yours at @userinfobot").
-					Value(&telegramChatID),
-			).Title("Telegram"),
-		).Run()
-		telegramCfg = config.TelegramConfig{BotToken: telegramToken, ChatID: telegramChatID}
+	telegramCfg, err := telegramSetup()
+	if err != nil {
+		return err
 	}
 
 	// ── Step 7: Save ───────────────────────────────────────────────
@@ -391,6 +368,172 @@ func parseDayInput(input string) config.DaySchedule {
 		}
 	}
 	return config.DaySchedule{Enabled: true, Times: times}
+}
+
+// telegramSetup guides the user through Telegram bot configuration.
+func telegramSetup() (config.TelegramConfig, error) {
+	var wantTelegram bool
+
+	err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Enable Telegram notifications?").
+				Description("Get a message every time you clock in/out").
+				Affirmative("Yes").
+				Negative("Skip").
+				Value(&wantTelegram),
+		),
+	).Run()
+	if err != nil {
+		return config.TelegramConfig{}, err
+	}
+
+	if !wantTelegram {
+		return config.TelegramConfig{}, nil
+	}
+
+	// Step 1: Create bot
+	fmt.Println()
+	fmt.Printf("  %s Step 1: Create a Telegram bot\n", sBold.Render("1."))
+	fmt.Printf("     Open Telegram and search for %s\n", sBold.Render("@BotFather"))
+	fmt.Printf("     Send %s and follow the instructions\n", sBold.Render("/newbot"))
+	fmt.Printf("     Copy the token it gives you (looks like %s)\n\n", sDim.Render("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"))
+
+	var openBotFather bool
+	huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Open @BotFather in browser?").
+				Affirmative("Open").
+				Negative("I already have a token").
+				Value(&openBotFather),
+		),
+	).Run()
+
+	if openBotFather {
+		openURL("https://t.me/BotFather")
+		fmt.Printf("  %s Opened in browser. Create the bot and come back.\n\n", sInfo)
+	}
+
+	var token string
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Bot Token").
+				Placeholder("123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11").
+				Value(&token).
+				Validate(func(s string) error {
+					if !strings.Contains(s, ":") {
+						return fmt.Errorf("token should contain a colon (:)")
+					}
+					return nil
+				}),
+		),
+	).Run()
+	if err != nil {
+		return config.TelegramConfig{}, err
+	}
+
+	// Step 2: Get chat ID
+	fmt.Println()
+	fmt.Printf("  %s Step 2: Get your Chat ID\n", sBold.Render("2."))
+	fmt.Printf("     Open Telegram and search for %s\n", sBold.Render("@userinfobot"))
+	fmt.Printf("     Send any message — it will reply with your ID (a number like %s)\n\n", sDim.Render("987654321"))
+
+	var openUserInfo bool
+	huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Open @userinfobot in browser?").
+				Affirmative("Open").
+				Negative("I already have my ID").
+				Value(&openUserInfo),
+		),
+	).Run()
+
+	if openUserInfo {
+		openURL("https://t.me/userinfobot")
+		fmt.Printf("  %s Opened in browser. Get your ID and come back.\n\n", sInfo)
+	}
+
+	var chatID string
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Chat ID").
+				Placeholder("987654321").
+				Value(&chatID).
+				Validate(func(s string) error {
+					if s == "" {
+						return fmt.Errorf("chat ID cannot be empty")
+					}
+					return nil
+				}),
+		),
+	).Run()
+	if err != nil {
+		return config.TelegramConfig{}, err
+	}
+
+	// Step 3: Test it
+	fmt.Println()
+	testCfg := config.TelegramConfig{BotToken: token, ChatID: chatID}
+
+	var testResult error
+	spinner.New().
+		Title("Sending test message...").
+		Action(func() {
+			testResult = sendTestTelegram(testCfg)
+		}).
+		Run()
+
+	if testResult != nil {
+		fmt.Printf("  %s Test failed: %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("✗"), testResult)
+		fmt.Printf("     Check your token and chat ID. You can reconfigure later in ~/.woffuk.yaml\n\n")
+	} else {
+		fmt.Printf("  %s Test message sent! Check your Telegram.\n\n", sOk)
+	}
+
+	return testCfg, nil
+}
+
+func sendTestTelegram(cfg config.TelegramConfig) error {
+	// Reuse the notify package
+	body := fmt.Sprintf(`{"chat_id":"%s","text":"✅ woffuk connected! You'll receive notifications here."}`, cfg.ChatID)
+	resp, err := http.Post(
+		fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", cfg.BotToken),
+		"application/json",
+		strings.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("connection error: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 401 {
+		return fmt.Errorf("invalid bot token")
+	}
+	if resp.StatusCode == 400 {
+		return fmt.Errorf("invalid chat ID — make sure you messaged the bot first")
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("Telegram API returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func openURL(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	}
+	if cmd != nil {
+		cmd.Start()
+	}
 }
 
 // loginFlow handles the full login with retries, error classification, and company detection.

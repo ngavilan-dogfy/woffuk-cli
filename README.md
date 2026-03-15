@@ -1,66 +1,77 @@
-# woffuk
+<p align="center">
+  <h1 align="center">woffuk</h1>
+  <p align="center">Automatic clock in/out for <a href="https://app.woffu.com">Woffu</a>. Set it up once, never think about it again.</p>
+</p>
 
-Automatic clock in/out for [Woffu](https://app.woffu.com). Install it, run the setup, and forget about it.
+<p align="center">
+  <a href="https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest"><img src="https://img.shields.io/github/v/release/ngavilan-dogfy/woffuk-cli?style=flat-square&color=7c3aed&label=release" alt="Release"></a>
+  <a href="https://github.com/ngavilan-dogfy/woffuk-cli/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/ngavilan-dogfy/woffuk-cli/release.yml?style=flat-square&label=build" alt="Build"></a>
+  <a href="https://goreportcard.com/report/github.com/ngavilan-dogfy/woffuk-cli"><img src="https://goreportcard.com/badge/github.com/ngavilan-dogfy/woffuk-cli?style=flat-square" alt="Go Report"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
+  <img src="https://img.shields.io/badge/go-%3E%3D1.24-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"></a>
+</p>
+
+<br>
+
+## What it does
+
+- Clocks in/out on Woffu automatically via GitHub Actions
+- Detects holidays, absences, and telework (approved **or pending**)
+- Uses office or home GPS coordinates based on your work mode
+- Sends Telegram notifications on every sign (optional)
+- Interactive TUI dashboard to check your status anytime
 
 ## Install
 
-### One-liner (macOS / Linux)
+### One-liner (recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ngavilan-dogfy/woffuk-cli/main/install.sh | sh
 ```
 
-This downloads the latest binary for your system and installs it to `/usr/local/bin`.
+Downloads the correct binary for your OS and architecture. No dependencies needed.
 
-### Download manually
+### Other options
 
-Go to [Releases](https://github.com/ngavilan-dogfy/woffuk-cli/releases), download the binary for your platform, and move it to your PATH:
+<details>
+<summary><strong>Download binary manually</strong></summary>
 
-| Platform | Binary |
+Go to [Releases](https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest) and download:
+
+| Platform | File |
 |---|---|
-| macOS Apple Silicon (M1/M2/M3/M4) | `woffuk-darwin-arm64` |
+| macOS Apple Silicon (M1+) | `woffuk-darwin-arm64` |
 | macOS Intel | `woffuk-darwin-amd64` |
 | Linux x64 | `woffuk-linux-amd64` |
-| Linux ARM | `woffuk-linux-arm64` |
+| Linux ARM64 | `woffuk-linux-arm64` |
 
 ```bash
 chmod +x woffuk-darwin-arm64
 sudo mv woffuk-darwin-arm64 /usr/local/bin/woffuk
 ```
 
-### From source (requires Go 1.24+)
+</details>
+
+<details>
+<summary><strong>Build from source (Go 1.24+)</strong></summary>
 
 ```bash
 go install github.com/ngavilan-dogfy/woffuk-cli@latest
 ```
 
-## Prerequisites
+</details>
 
-Before running `woffuk setup`, you need:
+### Prerequisites
 
-1. **A Woffu account** — your company email and password
-2. **GitHub CLI** — for auto-signing via GitHub Actions
-
-Install `gh`:
+You need the [GitHub CLI](https://cli.github.com) for auto-signing setup:
 
 ```bash
-# macOS
-brew install gh
-
-# Ubuntu / Debian
-sudo apt install gh
-
-# Fedora
-sudo dnf install gh
-
-# Or see https://cli.github.com
+brew install gh        # macOS
+sudo apt install gh    # Debian/Ubuntu
 ```
 
-Then login:
-
-```bash
-gh auth login
-```
+Then: `gh auth login`
 
 ## Setup
 
@@ -68,7 +79,7 @@ gh auth login
 woffuk setup
 ```
 
-That's it. The wizard handles everything:
+The wizard does everything:
 
 ```
 woffuk setup
@@ -83,76 +94,86 @@ woffuk setup
 → Dogfy Diet — IT, Senior Platform Engineer
 → Office: Oficinas Landmark
 
-┃ Home location
-┃ > Open map / Search by text
-
-  (browser opens with interactive map — click to pick your location)
-
+┃ Home location > Open map
+  (browser opens with an interactive map — search, click, or use "My location")
 ✓ 41.190452, 1.597968
 
 ┃ Use default schedule? Yes
-┃ Enable Telegram? Skip
-┃ Set up GitHub Actions? Yes
+
+┃ Enable Telegram notifications? Yes
+
+  1. Open @BotFather on Telegram → /newbot → copy token
+  2. Open @userinfobot on Telegram → get your Chat ID
+
+◯ Sending test message...
+✓ Test message sent! Check your Telegram.
 
 ◯ Setting up GitHub...
-
 ✓ Fork: yourusername/woffuk-cli
 ✓ Secrets + workflows configured
 
 All set!
-  Mon-Thu: 08:30, 13:30, 14:15, 17:30
-  Fri: 08:00, 15:00
 ```
 
-What happens behind the scenes:
+**What happens behind the scenes:**
+1. Logs into Woffu → auto-detects company, office, department
+2. Opens an interactive map in your browser to pick home location
+3. Guides you step-by-step through Telegram bot creation
+4. Forks this repo, sets all secrets, enables GitHub Actions
 
-1. Logs into Woffu and detects your office, department, and role
-2. Resolves office coordinates from Woffu (or geocodes the office name)
-3. Opens an interactive map in your browser to pick your home location
-4. Forks this repo to your GitHub account
-5. Configures all secrets and enables GitHub Actions
-
-After setup, Woffu will be clocked in/out automatically every workday. No further action needed.
+After setup, your Woffu is clocked in/out automatically every workday.
 
 ## Commands
 
-| Command | What it does |
+| Command | Description |
 |---|---|
 | `woffuk` | Interactive TUI dashboard |
 | `woffuk status` | Today's date, mode (office/remote), working day |
 | `woffuk events` | Remaining vacations, hours, personal days |
 | `woffuk sign` | Clock in/out right now |
-| `woffuk schedule` | View current auto-sign times |
-| `woffuk schedule edit` | Change sign times and push to GitHub |
-| `woffuk sync` | Re-sync secrets and workflows to your fork |
-| `woffuk setup` | Re-run the full setup wizard |
+| `woffuk schedule` | View auto-sign schedule |
+| `woffuk schedule edit` | Edit schedule + push to GitHub |
+| `woffuk sync` | Re-sync all secrets and workflows |
+| `woffuk setup` | Re-run setup wizard |
 
 ## Auto-signing
 
-GitHub Actions runs the signing on schedule:
+GitHub Actions clocks you in/out on schedule:
 
 | Day | Default times (CET) |
 |---|---|
 | Mon — Thu | 08:30, 13:30, 14:15, 17:30 |
 | Fri | 08:00, 15:00 |
 
-Each run adds a random 2–5 min delay so it doesn't sign at the exact same second every day.
+Each run adds a random 2–5 min delay for variance. Change times with `woffuk schedule edit`.
 
-Change times with `woffuk schedule edit` — it updates your config and pushes new workflows to GitHub.
-
-You can also trigger a manual sign from the GitHub **Actions** tab at any time.
+Two workflows:
+- **Auto Sign** — runs on cron schedule
+- **Manual Sign** — trigger from the Actions tab anytime
 
 ## How it works
 
-1. Authenticates with Woffu
-2. Fetches your calendar — holidays, absences, telework
-3. Detects telework (approved **or pending**) and picks home/office coordinates
-4. Signs with the correct GPS coordinates
-5. Sends a Telegram notification (if configured)
+```
+1. Authenticate with Woffu
+2. Fetch calendar → holidays, absences, telework
+3. Determine mode: OFFICE or REMOTE (checks both approved and pending events)
+4. Resolve GPS coordinates based on mode
+5. POST /api/svc/signs/signs → clock in/out
+6. Send Telegram notification (if configured)
+```
 
-## Telegram notifications (optional)
+## Map picker
 
-Get a message on every sign:
+The setup wizard includes an interactive map that opens in your browser:
+
+- **Search** — autocomplete with Photon API as you type
+- **Click** — place marker anywhere on the map
+- **Drag** — adjust marker position
+- **My location** — button that uses browser GPS
+
+## Telegram notifications
+
+Optional. Get a message on every sign:
 
 ```
 ✅ Fichaje realizado correctamente
@@ -160,35 +181,28 @@ Get a message on every sign:
 🏠 Teletrabajo
 ```
 
-To set up:
-
-1. Create a bot with [@BotFather](https://t.me/BotFather) on Telegram
-2. Get your chat ID from [@userinfobot](https://t.me/userinfobot)
-3. Run `woffuk setup` and enter the token + chat ID when prompted
-4. Or edit `~/.woffuk.yaml` manually and run `woffuk sync`
+The setup wizard guides you through creating a bot and sends a test message to verify everything works.
 
 ## Configuration
 
 | What | Where |
 |---|---|
 | Config | `~/.woffuk.yaml` |
-| Password | OS keychain (macOS Keychain / Linux keyring / Windows Credential Manager) |
+| Password | OS keychain (never stored in plain text) |
 | GitHub secrets | Set automatically by `woffuk setup` |
 
-### Environment variables (CI / GitHub Actions)
+### Environment variables (CI)
+
+Used by GitHub Actions. Set automatically — you don't need to touch these.
 
 | Variable | Description |
 |---|---|
-| `WOFFU_URL` | `https://app.woffu.com/api` |
-| `WOFFU_COMPANY_URL` | `https://yourcompany.woffu.com` |
-| `WOFFU_EMAIL` | Woffu login email |
-| `WOFFU_PASSWORD` | Woffu password |
-| `WOFFU_LATITUDE` | Office latitude |
-| `WOFFU_LONGITUDE` | Office longitude |
-| `WOFFU_HOME_LATITUDE` | Home latitude |
-| `WOFFU_HOME_LONGITUDE` | Home longitude |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token (optional) |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID (optional) |
+| `WOFFU_URL` | Woffu API base URL |
+| `WOFFU_COMPANY_URL` | Your company's Woffu URL |
+| `WOFFU_EMAIL` / `WOFFU_PASSWORD` | Credentials |
+| `WOFFU_LATITUDE` / `WOFFU_LONGITUDE` | Office coordinates |
+| `WOFFU_HOME_LATITUDE` / `WOFFU_HOME_LONGITUDE` | Home coordinates |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Telegram (optional) |
 
 ## License
 
