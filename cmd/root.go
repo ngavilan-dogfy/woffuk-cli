@@ -26,9 +26,12 @@ All commands auto-detect TTY:
 
 Querying:
   woffuk status              Today's signing status
+  woffuk today               Detailed day info + sign slots
   woffuk events              Available vacations, hours, etc.
+  woffuk requests            Your requests (vacations, telework, absences)
   woffuk history             Sign history (clock in/out records)
   woffuk calendar            Working days, holidays, telework
+  woffuk holidays            Company holidays
   woffuk schedule            View auto-sign schedule
   woffuk whoami              Current user profile
 
@@ -81,6 +84,9 @@ func init() {
 	rootCmd.AddCommand(eventsCmd)
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(calendarCmd)
+	rootCmd.AddCommand(requestsCmd)
+	rootCmd.AddCommand(holidaysCmd)
+	rootCmd.AddCommand(todayCmd)
 	rootCmd.AddCommand(whoamiCmd)
 	rootCmd.AddCommand(openCmd)
 	rootCmd.AddCommand(setupCmd)
