@@ -27,12 +27,17 @@ All commands auto-detect TTY:
 Querying:
   woffuk status              Today's signing status
   woffuk events              Available vacations, hours, etc.
+  woffuk history             Sign history (clock in/out records)
+  woffuk calendar            Working days, holidays, telework
   woffuk schedule            View auto-sign schedule
+  woffuk whoami              Current user profile
 
 Actions:
   woffuk sign                Clock in/out right now
+  woffuk sign --force        Sign even on non-working days
   woffuk auto                Check auto-signing status
   woffuk auto on/off         Toggle auto-signing
+  woffuk open [page]         Open Woffu in browser (docs, calendar, github)
 
 Configuration:
   woffuk setup               Full setup wizard
@@ -40,10 +45,12 @@ Configuration:
   woffuk config edit         Change any individual setting
   woffuk schedule edit       Edit schedule and push to GitHub
   woffuk sync                Re-sync secrets + workflows
-
-Other:
   woffuk update              Update to latest version
-  woffuk --version           Show version`,
+
+Output modes (on most commands):
+  --json                     Structured JSON for scripting
+  --plain                    TSV for awk/grep/cut
+  (auto-detects piped output → TSV)`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {
@@ -72,6 +79,10 @@ func init() {
 	rootCmd.AddCommand(signCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(eventsCmd)
+	rootCmd.AddCommand(historyCmd)
+	rootCmd.AddCommand(calendarCmd)
+	rootCmd.AddCommand(whoamiCmd)
+	rootCmd.AddCommand(openCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(scheduleCmd)
