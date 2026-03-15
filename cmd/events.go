@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gavilanbe/woffuk-cli/internal/config"
-	"github.com/gavilanbe/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
 )
 
 var eventsCmd = &cobra.Command{

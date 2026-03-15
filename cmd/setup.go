@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/gavilanbe/woffuk-cli/internal/config"
-	"github.com/gavilanbe/woffuk-cli/internal/geocode"
-	gh "github.com/gavilanbe/woffuk-cli/internal/github"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/geocode"
+	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
 )
 
 var setupCmd = &cobra.Command{

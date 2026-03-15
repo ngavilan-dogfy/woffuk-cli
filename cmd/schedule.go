@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gavilanbe/woffuk-cli/internal/config"
-	gh "github.com/gavilanbe/woffuk-cli/internal/github"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
+	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
 )
 
 var scheduleCmd = &cobra.Command{

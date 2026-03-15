@@ -29,7 +29,7 @@ func Geocode(address string) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "woffuk-cli/1.0 (github.com/gavilanbe/woffuk-cli)")
+	req.Header.Set("User-Agent", "woffuk-cli/1.0 (github.com/ngavilan-dogfy/woffuk-cli)")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

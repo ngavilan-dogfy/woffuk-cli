@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gavilanbe/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
 )
 
 const upstreamRepo = "paucasanellas/woffuk"

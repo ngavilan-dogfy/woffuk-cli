@@ -1,4 +1,4 @@
-module github.com/gavilanbe/woffuk-cli
+module github.com/ngavilan-dogfy/woffuk-cli
 
 go 1.25.6
 

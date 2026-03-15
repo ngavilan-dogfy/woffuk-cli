@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/gavilanbe/woffuk-cli/internal/config"
-	"github.com/gavilanbe/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
 )
 
 type state int

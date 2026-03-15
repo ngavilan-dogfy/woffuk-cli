@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gavilanbe/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
 )
 
 // CronEntry represents a single cron schedule line with a comment.
@@ -111,7 +111,7 @@ jobs:
           go-version: '1.24'
 
       - name: Install woffuk
-        run: go install github.com/gavilanbe/woffuk-cli@latest
+        run: go install github.com/ngavilan-dogfy/woffuk-cli@latest
 
       - name: Random delay (2-5 min)
         run: sleep $(( RANDOM %% 181 + 120 ))
@@ -152,7 +152,7 @@ jobs:
           go-version: '1.24'
 
       - name: Install woffuk
-        run: go install github.com/gavilanbe/woffuk-cli@latest
+        run: go install github.com/ngavilan-dogfy/woffuk-cli@latest
 
       - name: Sign
         run: woffuk sign
