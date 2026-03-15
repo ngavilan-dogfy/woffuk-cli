@@ -60,13 +60,45 @@ func (c *calendarGrid) firstWeekday() int {
 }
 
 func (c *calendarGrid) dayInfo(day int) *woffu.CalendarDay {
-	date := c.dateStr(day)
+	return c.dayInfoByDate(c.dateStr(day))
+}
+
+func (c *calendarGrid) dayInfoByDate(date string) *woffu.CalendarDay {
 	for i := range c.days {
 		if c.days[i].Date == date {
 			return &c.days[i]
 		}
 	}
 	return nil
+}
+
+// allEligibleDates returns selected dates eligible for request creation.
+// Current month dates are filtered (must be working, no active request).
+// Other month dates are included optimistically (API validates).
+func (c *calendarGrid) allEligibleDates() []string {
+	var dates []string
+	for _, date := range c.selectedDates() {
+		info := c.dayInfoByDate(date)
+		if info != nil {
+			// We have data — apply filters
+			if info.Status != "working" {
+				continue
+			}
+			hasActiveReq := false
+			for _, r := range info.Requests {
+				if r.Status == "pending" || r.Status == "approved" {
+					hasActiveReq = true
+					break
+				}
+			}
+			if hasActiveReq {
+				continue
+			}
+		}
+		// No info (other month) or passed filters — include
+		dates = append(dates, date)
+	}
+	return dates
 }
 
 func (c *calendarGrid) toggleSelect(day int) {

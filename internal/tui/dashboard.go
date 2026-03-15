@@ -999,43 +999,38 @@ func (d *Dashboard) editSchedule() tea.Cmd {
 // ── Calendar batch actions ──
 
 func (d *Dashboard) getCalActions() []action {
-	infos := d.cal.selectedDayInfos()
-	n := len(infos)
-	if n == 0 {
+	if len(d.cal.selected) == 0 {
 		return nil
 	}
 
-	// Analyze selection
-	workingNoReq := 0
+	// Analyze current month selection (we have full data)
+	infos := d.cal.selectedDayInfos()
 	withPendingReq := 0
 	withApprovedReq := 0
 
 	for _, info := range infos {
-		hasActiveReq := false
 		for _, r := range info.Requests {
 			switch r.Status {
 			case "pending":
 				withPendingReq++
-				hasActiveReq = true
 			case "approved":
 				withApprovedReq++
-				hasActiveReq = true
 			}
-		}
-		if !hasActiveReq && info.Status == "working" {
-			workingNoReq++
 		}
 	}
 
+	// Eligible dates for creation (current month filtered + other months optimistic)
+	eligibleCount := len(d.cal.allEligibleDates())
+
 	var actions []action
 
-	// Offer creation actions if there are working days without requests
-	if workingNoReq > 0 {
+	// Offer creation actions if there are eligible days
+	if eligibleCount > 0 {
 		actions = append(actions,
-			action{key: "telework", name: fmt.Sprintf("Request Telework (%d days)", workingNoReq), desc: "Teletrabajo 🏡"},
-			action{key: "vacation", name: fmt.Sprintf("Request Vacation (%d days)", workingNoReq), desc: "Vacaciones"},
-			action{key: "personal", name: fmt.Sprintf("Request Personal Day (%d days)", workingNoReq), desc: "Asuntos Propios"},
-			action{key: "hours", name: fmt.Sprintf("Request Hours Pool (%d days)", workingNoReq), desc: "Bolsa de horas"},
+			action{key: "telework", name: fmt.Sprintf("Request Telework (%d days)", eligibleCount), desc: "Teletrabajo 🏡"},
+			action{key: "vacation", name: fmt.Sprintf("Request Vacation (%d days)", eligibleCount), desc: "Vacaciones"},
+			action{key: "personal", name: fmt.Sprintf("Request Personal Day (%d days)", eligibleCount), desc: "Asuntos Propios"},
+			action{key: "hours", name: fmt.Sprintf("Request Hours Pool (%d days)", eligibleCount), desc: "Bolsa de horas"},
 		)
 	}
 
@@ -1079,24 +1074,8 @@ func (d *Dashboard) executeCalAction(a action) tea.Cmd {
 		return d.cancelSelectedRequests(targetStatus)
 	}
 
-	// Creation actions — only operate on working days without active requests
-	infos := d.cal.selectedDayInfos()
-	var eligibleDates []string
-	for _, info := range infos {
-		if info.Status != "working" {
-			continue
-		}
-		hasActiveReq := false
-		for _, r := range info.Requests {
-			if r.Status == "pending" || r.Status == "approved" {
-				hasActiveReq = true
-				break
-			}
-		}
-		if !hasActiveReq {
-			eligibleDates = append(eligibleDates, info.Date)
-		}
-	}
+	// Creation actions — current month filtered + other months included optimistically
+	eligibleDates := d.cal.allEligibleDates()
 
 	if len(eligibleDates) == 0 {
 		d.setFlash("No eligible days for this action", true)
