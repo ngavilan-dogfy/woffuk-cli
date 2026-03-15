@@ -49,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(scheduleCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(autoCmd)
 }
 
 // loadConfigOrSetup loads config + password, or guides user to setup.

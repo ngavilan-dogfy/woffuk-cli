@@ -42,12 +42,29 @@ var configCmd = &cobra.Command{
 		}
 		fmt.Println(sLabel.Render("Telegram") + sVal.Render(tg))
 
+		// Auto-sign status
+		autoStatus := sMask.Render("not set up")
+		if cfg.GithubFork != "" {
+			enabled, err := gh.IsAutoSignEnabled(cfg.GithubFork)
+			if err == nil {
+				if enabled {
+					autoStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true).Render("active")
+				} else {
+					autoStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("disabled")
+				}
+			}
+		}
+		fmt.Println(sLabel.Render("Auto-sign") + autoStatus)
+
 		fmt.Println()
 		fmt.Println(sLabel.Render("Schedule"))
 		printScheduleVisual(cfg.Schedule, sIn, sOut)
 
 		fmt.Println()
-		fmt.Printf("  Edit with: %s\n\n", lipgloss.NewStyle().Bold(true).Render("woffuk config edit"))
+		fmt.Printf("  Edit: %s    Auto-sign: %s / %s\n\n",
+			lipgloss.NewStyle().Bold(true).Render("woffuk config edit"),
+			lipgloss.NewStyle().Bold(true).Render("woffuk auto on"),
+			lipgloss.NewStyle().Bold(true).Render("off"))
 
 		return nil
 	},
