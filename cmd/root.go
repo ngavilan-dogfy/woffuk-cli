@@ -38,6 +38,8 @@ Querying:
 Actions:
   woffuk sign                Clock in/out right now
   woffuk sign --force        Sign even on non-working days
+  woffuk request             Create a request (telework, vacation, absence)
+  woffuk request cancel <id> Cancel a request
   woffuk auto                Check auto-signing status
   woffuk auto on/off         Toggle auto-signing
   woffuk open [page]         Open Woffu in browser (docs, calendar, github)
@@ -85,6 +87,7 @@ func init() {
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(calendarCmd)
 	rootCmd.AddCommand(requestsCmd)
+	rootCmd.AddCommand(requestCmd)
 	rootCmd.AddCommand(holidaysCmd)
 	rootCmd.AddCommand(todayCmd)
 	rootCmd.AddCommand(whoamiCmd)

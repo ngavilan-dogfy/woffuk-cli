@@ -207,6 +207,62 @@ func GetUserId(companyClient *Client, token string) (int, int, error) {
 	return user.UserId, user.CalendarId, nil
 }
 
+// CreateRequest submits a new request (vacation, telework, absence, etc).
+func CreateRequest(companyClient *Client, token string, userId, companyId, eventId int, startDate, endDate string, isVacation bool) error {
+	body := map[string]interface{}{
+		"AgreementEventId":     eventId,
+		"IsVacation":           isVacation,
+		"NumberHoursRequested": 0,
+		"QuickDescription":     "",
+		"ResponsibleUserId":    0,
+		"UserId":               userId,
+		"Files":                []interface{}{},
+		"CompanyId":            companyId,
+		"Accepted":             false,
+		"Documents":            []interface{}{},
+		"StartTime":            nil,
+		"EndTime":              nil,
+		"NumberDaysRequested":  1,
+		"StartDate":            startDate,
+		"EndDate":              endDate,
+	}
+
+	err := companyClient.doJSON("POST", "/api/requests", body, map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	return nil
+}
+
+// CancelRequest deletes/cancels a request by ID.
+func CancelRequest(companyClient *Client, token string, requestId int) error {
+	err := companyClient.doJSON("DELETE", fmt.Sprintf("/api/requests/%d", requestId), nil, map[string]string{
+		"Authorization": "Bearer " + token,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("cancel request: %w", err)
+	}
+	return nil
+}
+
+// GetUserIds returns userId and companyId.
+func GetUserIds(companyClient *Client, token string) (userId, companyId int, err error) {
+	var user struct {
+		UserId    int `json:"UserId"`
+		CompanyId int `json:"CompanyId"`
+	}
+	err = companyClient.doJSON("GET", "/api/users", nil, map[string]string{
+		"Authorization": "Bearer " + token,
+	}, &user)
+	if err != nil {
+		return 0, 0, err
+	}
+	return user.UserId, user.CompanyId, nil
+}
+
 func requestStatusName(id int) string {
 	switch id {
 	case 0:
