@@ -12,7 +12,7 @@ import (
 
 const upstreamRepo = "ngavilan-dogfy/woffuk-cli"
 
-// ForkAndSetup forks the upstream repo, sets secrets, generates workflows, and pushes.
+// ForkAndSetup forks the upstream repo (or uses existing), sets secrets, generates workflows, and pushes.
 func ForkAndSetup(cfg *config.Config, password string) (string, error) {
 	username, err := getGitHubUsername()
 	if err != nil {
@@ -20,20 +20,33 @@ func ForkAndSetup(cfg *config.Config, password string) (string, error) {
 	}
 	forkName := username + "/woffuk-cli"
 
-	// Fork the repo (may already exist)
-	_ = ghRun("repo", "fork", upstreamRepo, "--clone=false")
+	// Check if user already owns the upstream repo (they're the author, not a forker)
+	isOwner := (username + "/woffuk-cli") == upstreamRepo
+
+	if !isOwner {
+		// Check if fork already exists
+		existsErr := ghRun("api", "repos/"+forkName, "--silent")
+		if existsErr != nil {
+			// Fork doesn't exist, create it
+			if err := ghRun("repo", "fork", upstreamRepo, "--clone=false"); err != nil {
+				return "", fmt.Errorf("could not fork repo: %w", err)
+			}
+		}
+	}
 
 	// Set secrets
 	if err := setSecrets(forkName, cfg, password); err != nil {
-		return "", err
+		return "", fmt.Errorf("set secrets on %s: %w", forkName, err)
 	}
 
 	// Enable GitHub Actions
 	enableActions(forkName)
 
-	// Clone, generate workflows, and push
-	if err := pushWorkflows(forkName, cfg); err != nil {
-		return "", fmt.Errorf("push workflows: %w", err)
+	// Generate and push workflows (only for forks, not the upstream itself)
+	if !isOwner {
+		if err := pushWorkflows(forkName, cfg); err != nil {
+			return "", fmt.Errorf("push workflows: %w", err)
+		}
 	}
 
 	return forkName, nil
@@ -89,10 +102,13 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cloneURL := fmt.Sprintf("https://github.com/%s.git", repo)
-	if err := runCmd(tmpDir, "gh", "repo", "clone", cloneURL, tmpDir, "--", "--depth=1"); err != nil {
+	// Use gh repo clone with owner/name format (uses gh's authenticated token)
+	if err := runCmd(tmpDir, "gh", "repo", "clone", repo, tmpDir, "--", "--depth=1"); err != nil {
 		return fmt.Errorf("clone fork: %w", err)
 	}
+
+	// Configure git to use gh for push auth
+	_ = runCmdSilent(tmpDir, "gh", "auth", "setup-git")
 
 	// Create .github/workflows directory
 	workflowDir := filepath.Join(tmpDir, ".github", "workflows")
@@ -172,6 +188,12 @@ func runCmd(dir string, name string, args ...string) error {
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func runCmdSilent(dir string, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
 	return cmd.Run()
 }
 
