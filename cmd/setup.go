@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,8 +84,8 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			}
 			officeLat, officeLon = lat, lon
 		} else {
-			// Fallback: manual pick
-			lat, lon, err := locationPickerWithMap("Office location", 41.39, 2.17)
+			// Fallback: Google Maps or manual
+			lat, lon, err := locationPickerWithMap("Office location", 0, 0)
 			if err != nil {
 				return err
 			}
@@ -249,8 +250,7 @@ func locationPickerWithMap(title string, defaultLat, defaultLon float64) (float6
 					Title(title).
 					Options(
 						huh.NewOption("Paste a Google Maps URL", "gmaps"),
-						huh.NewOption("Search by address", "search"),
-						huh.NewOption("Open interactive map", "map"),
+						huh.NewOption("Enter coordinates manually", "manual"),
 					).
 					Value(&method),
 			),
@@ -262,20 +262,11 @@ func locationPickerWithMap(title string, defaultLat, defaultLon float64) (float6
 			if err == nil {
 				return lat, lon, nil
 			}
-			// If failed, loop back to menu
 
-		case "search":
-			lat, lon, err := searchPicker(title)
+		case "manual":
+			lat, lon, err := manualCoordsPicker(title)
 			if err == nil {
 				return lat, lon, nil
-			}
-
-		case "map":
-			fmt.Printf("  %s Opening map in browser...\n", sInfo)
-			result, err := geocode.PickFromMap(title, defaultLat, defaultLon)
-			if err == nil {
-				fmt.Printf("  %s %s\n\n", sOk, sCoord.Render(fmt.Sprintf("%.6f, %.6f", result.Lat, result.Lon)))
-				return result.Lat, result.Lon, nil
 			}
 		}
 	}
@@ -327,45 +318,42 @@ func googleMapsURLPicker(title string) (float64, float64, error) {
 	}
 }
 
-func searchPicker(title string) (float64, float64, error) {
-	var query string
-	huh.NewForm(
+func manualCoordsPicker(title string) (float64, float64, error) {
+	var latStr, lonStr string
+
+	err := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Search").
-				Description("Street, building, city...").
-				Placeholder("Passeig Zona Franca 28 Barcelona").
-				Value(&query).
+				Title("Latitude").
+				Placeholder("41.353186").
+				Value(&latStr).
 				Validate(func(s string) error {
-					if len(s) < 3 {
-						return fmt.Errorf("enter at least 3 characters")
+					if _, err := strconv.ParseFloat(s, 64); err != nil {
+						return fmt.Errorf("enter a valid number")
+					}
+					return nil
+				}),
+			huh.NewInput().
+				Title("Longitude").
+				Placeholder("2.144802").
+				Value(&lonStr).
+				Validate(func(s string) error {
+					if _, err := strconv.ParseFloat(s, 64); err != nil {
+						return fmt.Errorf("enter a valid number")
 					}
 					return nil
 				}),
 		).Title(title),
 	).Run()
-
-	var results []geocode.Result
-	var searchErr error
-
-	spinner.New().
-		Title("Searching...").
-		Action(func() {
-			results, searchErr = geocode.Search(query, 5)
-		}).
-		Run()
-
-	if searchErr != nil {
-		fmt.Printf("  %s %s\n\n", sWarn, searchErr)
-		return 0, 0, searchErr
+	if err != nil {
+		return 0, 0, err
 	}
 
-	if len(results) == 0 {
-		fmt.Printf("  %s No results. Try again.\n\n", sWarn)
-		return 0, 0, fmt.Errorf("no results")
-	}
+	lat, _ := strconv.ParseFloat(latStr, 64)
+	lon, _ := strconv.ParseFloat(lonStr, 64)
 
-	return pickFromResults(results, title)
+	fmt.Printf("  %s %s\n\n", sOk, sCoord.Render(fmt.Sprintf("%.6f, %.6f", lat, lon)))
+	return lat, lon, nil
 }
 
 func scheduleWizard() (config.Schedule, string, error) {
