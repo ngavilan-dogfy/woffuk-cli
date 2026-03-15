@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -15,7 +16,19 @@ import (
 	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
 )
 
-// Messages
+// ── Tab indices ──
+
+const (
+	tabStatus   = 0
+	tabEvents   = 1
+	tabCalendar = 2
+	tabCount    = 3
+)
+
+var tabNames = [tabCount]string{"Status", "Events", "Calendar"}
+
+// ── Messages ──
+
 type dataMsg struct {
 	signInfo *woffu.SignInfo
 	events   []woffu.AvailableUserEvent
@@ -28,14 +41,27 @@ type syncDoneMsg struct{}
 type clearFlashMsg struct{}
 type tickMsg time.Time
 
-// Action items for the menu
+// ── Action items for the overlay menu ──
+
 type action struct {
 	key  string
 	name string
 	desc string
 }
 
-// Dashboard is the main TUI model.
+// ── Overlay kinds ──
+
+type overlayKind int
+
+const (
+	overlayNone     overlayKind = iota
+	overlayMenu                 // action menu
+	overlaySignConf             // sign confirmation
+	overlayAutoConf             // auto-sign toggle confirmation
+)
+
+// ── Dashboard model ──
+
 type Dashboard struct {
 	client        *woffu.Client
 	companyClient *woffu.Client
@@ -52,9 +78,11 @@ type Dashboard struct {
 	err        error
 
 	// UI state
+	activeTab  int
 	signing    bool
-	menuOpen   bool
+	overlay    overlayKind
 	menuCursor int
+	autoTarget bool // what the auto-sign toggle overlay wants to set
 	flash      string
 	flashErr   bool
 
@@ -70,12 +98,15 @@ func NewDashboard(client, companyClient *woffu.Client, cfg *config.Config, passw
 		cfg:           cfg,
 		password:      password,
 		loading:       true,
+		activeTab:     tabStatus,
 	}
 }
 
 func (d *Dashboard) Init() tea.Cmd {
 	return tea.Batch(d.fetchData(), d.fetchAutoStatus(), d.tick())
 }
+
+// ── Update ──
 
 func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -105,17 +136,17 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			d.setFlash("Auto-signing disabled", false)
 		}
-		return d, d.clearFlashAfter(3*time.Second)
+		return d, d.clearFlashAfter(3 * time.Second)
 
 	case syncDoneMsg:
 		d.setFlash("Synced to GitHub", false)
-		return d, d.clearFlashAfter(3*time.Second)
+		return d, d.clearFlashAfter(3 * time.Second)
 
 	case errMsg:
 		d.loading = false
 		d.signing = false
 		d.setFlash(msg.err.Error(), true)
-		return d, d.clearFlashAfter(5*time.Second)
+		return d, d.clearFlashAfter(5 * time.Second)
 
 	case clearFlashMsg:
 		d.flash = ""
@@ -127,15 +158,41 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return d, nil
 }
 
+// ── Key handling ──
+
 func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	// Menu navigation
-	if d.menuOpen {
+	// ── Overlay: sign confirmation ──
+	if d.overlay == overlaySignConf {
+		switch key {
+		case "y", "Y", "enter":
+			d.overlay = overlayNone
+			return d, d.trySign()
+		case "n", "N", "esc", "q":
+			d.overlay = overlayNone
+		}
+		return d, nil
+	}
+
+	// ── Overlay: auto-sign toggle confirmation ──
+	if d.overlay == overlayAutoConf {
+		switch key {
+		case "y", "Y", "enter":
+			d.overlay = overlayNone
+			return d, d.toggleAuto(d.autoTarget)
+		case "n", "N", "esc", "q":
+			d.overlay = overlayNone
+		}
+		return d, nil
+	}
+
+	// ── Overlay: action menu ──
+	if d.overlay == overlayMenu {
 		actions := d.getActions()
 		switch key {
-		case "esc", "a":
-			d.menuOpen = false
+		case "esc", "q":
+			d.overlay = overlayNone
 		case "up", "k":
 			if d.menuCursor > 0 {
 				d.menuCursor--
@@ -145,31 +202,59 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				d.menuCursor++
 			}
 		case "enter":
-			d.menuOpen = false
+			d.overlay = overlayNone
 			return d, d.executeAction(actions[d.menuCursor])
 		}
 		return d, nil
 	}
 
-	// Global keys
+	// ── Global keys ──
 	switch key {
 	case "q", "ctrl+c":
 		return d, tea.Quit
-	case "a", "enter":
-		d.menuOpen = true
+
+	// Tab navigation
+	case "tab":
+		d.activeTab = (d.activeTab + 1) % tabCount
+	case "shift+tab":
+		d.activeTab = (d.activeTab - 1 + tabCount) % tabCount
+	case "1":
+		d.activeTab = tabStatus
+	case "2":
+		d.activeTab = tabEvents
+	case "3":
+		d.activeTab = tabCalendar
+
+	// Actions
+	case "enter":
+		d.overlay = overlayMenu
 		d.menuCursor = 0
 	case "s":
-		return d, d.trySign()
+		d.overlay = overlaySignConf
+	case "a":
+		if d.autoActive != nil {
+			d.autoTarget = !*d.autoActive
+			d.overlay = overlayAutoConf
+		} else if d.cfg.GithubFork == "" {
+			d.setFlash("Auto-sign not set up. Run woffuk setup.", true)
+			return d, d.clearFlashAfter(3 * time.Second)
+		}
 	case "r":
 		d.loading = true
 		d.flash = ""
 		return d, tea.Batch(d.fetchData(), d.fetchAutoStatus())
 	case "o":
 		openBrowserCmd(d.cfg.WoffuCompanyURL + "/v2")
+	case "g":
+		if d.cfg.GithubFork != "" {
+			openBrowserCmd("https://github.com/" + d.cfg.GithubFork + "/actions")
+		}
 	}
 
 	return d, nil
 }
+
+// ── View ──
 
 func (d *Dashboard) View() string {
 	if d.width == 0 {
@@ -178,23 +263,27 @@ func (d *Dashboard) View() string {
 
 	var sections []string
 
+	// Header bar
 	sections = append(sections, d.renderHeader())
 
+	// Tab bar
+	sections = append(sections, d.renderTabBar())
+
+	// Tab content
 	if d.loading {
 		sections = append(sections, "\n"+sDimmed.Render("  Loading..."))
 	} else {
-		sections = append(sections, d.renderStatus())
-
-		if evts := d.renderEvents(); evts != "" {
-			sections = append(sections, evts)
+		switch d.activeTab {
+		case tabStatus:
+			sections = append(sections, d.renderStatusTab())
+		case tabEvents:
+			sections = append(sections, d.renderEventsTab())
+		case tabCalendar:
+			sections = append(sections, d.renderCalendarTab())
 		}
-		if next := d.renderNextEvents(); next != "" {
-			sections = append(sections, next)
-		}
-		sections = append(sections, d.renderSchedule())
-		sections = append(sections, d.renderAutoSign())
 	}
 
+	// Flash message
 	if d.flash != "" {
 		icon := sFlashSuccess.Render("  ✓ ")
 		if d.flashErr {
@@ -203,18 +292,31 @@ func (d *Dashboard) View() string {
 		sections = append(sections, "\n"+icon+d.flash)
 	}
 
+	// Footer help
 	sections = append(sections, d.renderHelp())
 
 	dashboard := strings.Join(sections, "\n")
 
-	if d.menuOpen {
-		return d.overlayMenu(dashboard)
+	// Overlays
+	switch d.overlay {
+	case overlayMenu:
+		return d.renderOverlayMenu(dashboard)
+	case overlaySignConf:
+		return d.renderOverlayConfirm(dashboard, "Sign now?", "Clock in/out on Woffu right now.", "y/enter", "n/esc")
+	case overlayAutoConf:
+		verb := "Enable"
+		desc := "Resume GitHub Actions auto-signing."
+		if !d.autoTarget {
+			verb = "Disable"
+			desc = "Stop GitHub Actions from signing automatically."
+		}
+		return d.renderOverlayConfirm(dashboard, verb+" auto-sign?", desc, "y/enter", "n/esc")
 	}
 
 	return dashboard
 }
 
-// ── Render sections ──
+// ── Render: header ──
 
 func (d *Dashboard) renderHeader() string {
 	name := "woffuk"
@@ -231,39 +333,65 @@ func (d *Dashboard) renderHeader() string {
 		Render(left + strings.Repeat(" ", gap) + right)
 }
 
-func (d *Dashboard) renderStatus() string {
-	if d.signInfo == nil {
-		return ""
-	}
-	info := d.signInfo
+// ── Render: tab bar ──
 
-	workingDay := sSuccess.Render("yes")
-	if !info.IsWorkingDay {
-		workingDay = sDanger.Render("no")
+func (d *Dashboard) renderTabBar() string {
+	var tabs []string
+	for i, name := range tabNames {
+		tabs = append(tabs, " "+tabStyle(name, i == d.activeTab)+" ")
 	}
-
-	modeStyle := sDimmed
-	if info.Mode == woffu.SignModeRemote {
-		modeStyle = sSuccess
-	}
-	mode := modeStyle.Render(fmt.Sprintf("%s %s", info.Mode.Emoji(), info.Mode.Label()))
-
-	rows := []string{
-		sLabel.Render("Date") + sValue.Render(info.Date),
-		sLabel.Render("Working day") + workingDay,
-		sLabel.Render("Mode") + mode,
-	}
-	if info.IsWorkingDay {
-		rows = append(rows, sLabel.Render("Coordinates")+sDimmed.Render(fmt.Sprintf("%.4f, %.4f", info.Latitude, info.Longitude)))
-	}
-
-	return "\n" + sBox.Render(strings.Join(rows, "\n"))
+	bar := strings.Join(tabs, sDimmed.Render("|"))
+	return "  " + bar
 }
 
-func (d *Dashboard) renderEvents() string {
-	if len(d.events) == 0 {
-		return ""
+// ── Render: Status tab ──
+
+func (d *Dashboard) renderStatusTab() string {
+	var parts []string
+
+	// Sign info box
+	if d.signInfo != nil {
+		info := d.signInfo
+
+		workingDay := sSuccess.Render("yes")
+		if !info.IsWorkingDay {
+			workingDay = sDanger.Render("no")
+		}
+
+		modeStyle := sDimmed
+		if info.Mode == woffu.SignModeRemote {
+			modeStyle = sSuccess
+		}
+		mode := modeStyle.Render(fmt.Sprintf("%s %s", info.Mode.Emoji(), info.Mode.Label()))
+
+		rows := []string{
+			sLabel.Render("Date") + sValue.Render(info.Date),
+			sLabel.Render("Working day") + workingDay,
+			sLabel.Render("Mode") + mode,
+		}
+		if info.IsWorkingDay {
+			rows = append(rows, sLabel.Render("Coordinates")+sDimmed.Render(fmt.Sprintf("%.4f, %.4f", info.Latitude, info.Longitude)))
+		}
+
+		parts = append(parts, "\n"+sBox.Render(strings.Join(rows, "\n")))
 	}
+
+	// Schedule
+	parts = append(parts, d.renderSchedule())
+
+	// Auto-sign status
+	parts = append(parts, d.renderAutoSign())
+
+	return strings.Join(parts, "\n")
+}
+
+// ── Render: Events tab ──
+
+func (d *Dashboard) renderEventsTab() string {
+	if len(d.events) == 0 {
+		return "\n" + sDimmed.Render("  No events available.")
+	}
+
 	var rows []string
 	for _, e := range d.events {
 		name := lipgloss.NewStyle().Foreground(colorMuted).Width(40).Render(e.Name)
@@ -273,25 +401,25 @@ func (d *Dashboard) renderEvents() string {
 	return "\n" + sSubtitle.Render("  Available events") + "\n" + strings.Join(rows, "\n")
 }
 
-func (d *Dashboard) renderNextEvents() string {
+// ── Render: Calendar tab ──
+
+func (d *Dashboard) renderCalendarTab() string {
 	if d.signInfo == nil || len(d.signInfo.NextEvents) == 0 {
-		return ""
+		return "\n" + sDimmed.Render("  No upcoming holidays or events.")
 	}
+
 	var rows []string
-	limit := 5
-	for i, e := range d.signInfo.NextEvents {
-		if i >= limit {
-			rows = append(rows, sDimmed.Render(fmt.Sprintf("    ... +%d more", len(d.signInfo.NextEvents)-limit)))
-			break
-		}
+	for _, e := range d.signInfo.NextEvents {
 		name := ""
 		if len(e.Names) > 0 {
 			name = " " + e.Names[0]
 		}
 		rows = append(rows, "  "+sDimmed.Render("  "+e.Date)+name)
 	}
-	return "\n" + sSubtitle.Render("  Upcoming") + "\n" + strings.Join(rows, "\n")
+	return "\n" + sSubtitle.Render("  Upcoming holidays & events") + "\n" + strings.Join(rows, "\n")
 }
+
+// ── Render: schedule section ──
 
 func (d *Dashboard) renderSchedule() string {
 	s := d.cfg.Schedule
@@ -318,6 +446,8 @@ func (d *Dashboard) renderSchedule() string {
 	return "\n" + sSubtitle.Render("  Schedule") + "\n" + strings.Join(parts, "\n")
 }
 
+// ── Render: auto-sign status ──
+
 func (d *Dashboard) renderAutoSign() string {
 	status := sDimmed.Render("checking...")
 	if d.autoActive != nil {
@@ -332,14 +462,40 @@ func (d *Dashboard) renderAutoSign() string {
 	return "\n" + sLabel.Render("  Auto-sign") + status
 }
 
+// ── Render: footer help ──
+
 func (d *Dashboard) renderHelp() string {
-	hints := []string{
-		hint("a", "actions"),
-		hint("s", "sign"),
-		hint("r", "refresh"),
-		hint("o", "woffu"),
-		hint("q", "quit"),
+	var hints []string
+
+	switch d.activeTab {
+	case tabStatus:
+		hints = []string{
+			hint("s", "sign"),
+			hint("a", "auto-sign"),
+			hint("r", "refresh"),
+			hint("o", "woffu"),
+			hint("g", "github"),
+		}
+	case tabEvents:
+		hints = []string{
+			hint("r", "refresh"),
+			hint("o", "woffu"),
+		}
+	case tabCalendar:
+		hints = []string{
+			hint("r", "refresh"),
+			hint("o", "woffu"),
+		}
 	}
+
+	// Tab navigation + quit always shown
+	hints = append(hints,
+		hint("tab", "next"),
+		hint("1-3", "tabs"),
+		hint("enter", "menu"),
+		hint("q", "quit"),
+	)
+
 	return "\n" + sDimmed.Render("  ") + strings.Join(hints, "  ")
 }
 
@@ -403,7 +559,9 @@ func (d *Dashboard) executeAction(a action) tea.Cmd {
 	return nil
 }
 
-func (d *Dashboard) overlayMenu(bg string) string {
+// ── Overlay rendering ──
+
+func (d *Dashboard) renderOverlayMenu(bg string) string {
 	actions := d.getActions()
 
 	var rows []string
@@ -429,8 +587,22 @@ func (d *Dashboard) overlayMenu(bg string) string {
 		Width(50).
 		Render(menuContent)
 
-	// Center the menu overlay
 	return placeCenter(bg, menuBox, d.width, d.height)
+}
+
+func (d *Dashboard) renderOverlayConfirm(bg, title, desc, yesHint, noHint string) string {
+	content := sSection.Render("  "+title) + "\n\n" +
+		sDimmed.Render("  "+desc) + "\n\n" +
+		"  " + hint(yesHint, "confirm") + "    " + hint(noHint, "cancel")
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorWarning).
+		Padding(1, 2).
+		Width(50).
+		Render(content)
+
+	return placeCenter(bg, box, d.width, d.height)
 }
 
 func placeCenter(bg, overlay string, w, h int) string {
@@ -602,5 +774,16 @@ func (d *Dashboard) setFlash(text string, isErr bool) {
 }
 
 func openBrowserCmd(url string) {
-	exec.Command("open", url).Start()
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	}
+	if cmd != nil {
+		cmd.Start()
+	}
 }

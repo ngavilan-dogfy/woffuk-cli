@@ -16,8 +16,34 @@ import (
 var rootCmd = &cobra.Command{
 	Use:     "woffuk",
 	Short:   "Woffu time tracking CLI",
-	Long:    "CLI tool to automatically clock in/out of Woffu with an interactive TUI dashboard.",
 	Version: Version,
+	Long: `A CLI tool for Woffu time tracking. Fully scriptable and pipe-friendly.
+
+All commands auto-detect TTY:
+  • Terminal  → colored, human-friendly output
+  • Piped     → machine-readable TSV
+  • --json    → structured JSON
+
+Querying:
+  woffuk status              Today's signing status
+  woffuk events              Available vacations, hours, etc.
+  woffuk schedule            View auto-sign schedule
+
+Actions:
+  woffuk sign                Clock in/out right now
+  woffuk auto                Check auto-signing status
+  woffuk auto on/off         Toggle auto-signing
+
+Configuration:
+  woffuk setup               Full setup wizard
+  woffuk config              View all settings
+  woffuk config edit         Change any individual setting
+  woffuk schedule edit       Edit schedule and push to GitHub
+  woffuk sync                Re-sync secrets + workflows
+
+Other:
+  woffuk update              Update to latest version
+  woffuk --version           Show version`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, password, err := loadConfigOrSetup()
 		if err != nil {

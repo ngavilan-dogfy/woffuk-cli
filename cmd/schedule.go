@@ -12,6 +12,8 @@ import (
 	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
 )
 
+var scheduleJSONFlag bool
+
 var scheduleCmd = &cobra.Command{
 	Use:   "schedule",
 	Short: "View or edit auto-sign schedule",
@@ -19,6 +21,11 @@ var scheduleCmd = &cobra.Command{
 		cfg, err := config.Load()
 		if err != nil {
 			return err
+		}
+
+		// JSON output
+		if scheduleJSONFlag {
+			return printJSON(scheduleToJSON(cfg))
 		}
 
 		sIn := lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
@@ -113,6 +120,43 @@ var schedulePushCmd = &cobra.Command{
 }
 
 func init() {
+	scheduleCmd.Flags().BoolVar(&scheduleJSONFlag, "json", false, "Output as JSON")
 	scheduleCmd.AddCommand(scheduleEditCmd)
 	scheduleCmd.AddCommand(schedulePushCmd)
+}
+
+// scheduleToJSON builds a structured map for JSON output.
+func scheduleToJSON(cfg *config.Config) map[string]interface{} {
+	result := map[string]interface{}{
+		"timezone": cfg.Timezone,
+		"days":     daySchedulesToJSON(cfg.Schedule),
+	}
+	if cfg.ActiveSchedule != "" {
+		result["active_preset"] = cfg.ActiveSchedule
+	}
+	return result
+}
+
+func daySchedulesToJSON(s config.Schedule) map[string]interface{} {
+	return map[string]interface{}{
+		"monday":    dayToJSON(s.Monday),
+		"tuesday":   dayToJSON(s.Tuesday),
+		"wednesday": dayToJSON(s.Wednesday),
+		"thursday":  dayToJSON(s.Thursday),
+		"friday":    dayToJSON(s.Friday),
+	}
+}
+
+func dayToJSON(d config.DaySchedule) map[string]interface{} {
+	result := map[string]interface{}{
+		"enabled": d.Enabled,
+	}
+	if d.Enabled {
+		var times []string
+		for _, t := range d.Times {
+			times = append(times, t.Time)
+		}
+		result["times"] = times
+	}
+	return result
 }

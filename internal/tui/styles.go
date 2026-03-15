@@ -14,6 +14,8 @@ var (
 	colorText      = lipgloss.Color("#f9fafb") // White
 	colorBg        = lipgloss.Color("#111827") // Dark bg
 	colorBarBg     = lipgloss.Color("#0f172a") // Darker bg
+	colorTabActive = lipgloss.Color("#c084fc") // Active tab underline
+	colorTabInact  = lipgloss.Color("#4b5563") // Inactive tab
 )
 
 // Styles
@@ -70,6 +72,23 @@ var (
 	sSignOut = lipgloss.NewStyle().Foreground(colorDanger)
 )
 
+// hint renders a keyboard shortcut hint: key in cyan + description in gray.
 func hint(key, desc string) string {
 	return sKey.Render(key) + " " + sHint.Render(desc)
+}
+
+// tabStyle renders a tab label with active/inactive styling.
+// Active tabs get a colored underline and bold text; inactive tabs are dimmed.
+func tabStyle(name string, active bool) string {
+	if active {
+		return lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary).
+			UnderlineSpaces(true).
+			Underline(true).
+			Render(name)
+	}
+	return lipgloss.NewStyle().
+		Foreground(colorTabInact).
+		Render(name)
 }
