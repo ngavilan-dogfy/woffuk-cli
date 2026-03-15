@@ -5,6 +5,51 @@ import (
 	"strconv"
 )
 
+// UserProfile contains the user's profile info from Woffu.
+type UserProfile struct {
+	FullName         string
+	Email            string
+	CompanyName      string
+	DepartmentName   string
+	JobTitle         string
+	OfficeName       string
+	OfficeLatitude   *float64
+	OfficeLongitude  *float64
+}
+
+type woffuUserFull struct {
+	FullName           string   `json:"FullName"`
+	Email              string   `json:"Email"`
+	CompanyName        string   `json:"CompanyName"`
+	DepartmentFullName string   `json:"DepartmentFullName"`
+	JobTitleName       string   `json:"JobTitleName"`
+	OfficeName         string   `json:"OfficeName"`
+	OfficeLatitude     *float64 `json:"OfficeLatitude"`
+	OfficeLongitude    *float64 `json:"OfficeLongitude"`
+}
+
+// GetUserProfile fetches the user profile from Woffu.
+func GetUserProfile(companyClient *Client, token string) (*UserProfile, error) {
+	var data woffuUserFull
+	err := companyClient.doJSON("GET", "/api/users", nil, map[string]string{
+		"Authorization": "Bearer " + token,
+	}, &data)
+	if err != nil {
+		return nil, fmt.Errorf("get user profile: %w", err)
+	}
+
+	return &UserProfile{
+		FullName:        data.FullName,
+		Email:           data.Email,
+		CompanyName:     data.CompanyName,
+		DepartmentName:  data.DepartmentFullName,
+		JobTitle:        data.JobTitleName,
+		OfficeName:      data.OfficeName,
+		OfficeLatitude:  data.OfficeLatitude,
+		OfficeLongitude: data.OfficeLongitude,
+	}, nil
+}
+
 // GetAvailableEvents returns the user's available events (vacations, hours, etc).
 func GetAvailableEvents(companyClient *Client, token string) ([]AvailableUserEvent, error) {
 	var data []woffuAgreementEventAvailability

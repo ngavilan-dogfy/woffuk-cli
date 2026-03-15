@@ -13,13 +13,17 @@ import (
 	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
 	"github.com/ngavilan-dogfy/woffuk-cli/internal/geocode"
 	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
+	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
-	successIcon = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).SetString("✓")
-	infoIcon    = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).SetString("→")
-	coordStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	sTitle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).MarginBottom(1)
+	sOk      = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).SetString("✓")
+	sInfo    = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).SetString("→")
+	sWarn    = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).SetString("!")
+	sCoord   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	sDim     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	sBold    = lipgloss.NewStyle().Bold(true)
 )
 
 var setupCmd = &cobra.Command{
@@ -29,16 +33,16 @@ var setupCmd = &cobra.Command{
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	fmt.Println(titleStyle.Render("woffuk setup"))
+	fmt.Println(sTitle.Render("woffuk setup"))
 
-	// --- Credentials ---
+	// ── Step 1: Login ──────────────────────────────────────────────
 
-	var email, password, company string
+	var email, password string
 
-	credentialsForm := huh.NewForm(
+	err := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Woffu email").
+				Title("Email").
 				Placeholder("you@company.com").
 				Value(&email).
 				Validate(func(s string) error {
@@ -47,59 +51,137 @@ func runSetup(cmd *cobra.Command, args []string) error {
 					}
 					return nil
 				}),
-
 			huh.NewInput().
-				Title("Woffu password").
+				Title("Password").
 				EchoMode(huh.EchoModePassword).
-				Value(&password).
-				Validate(func(s string) error {
-					if len(s) < 1 {
-						return fmt.Errorf("password cannot be empty")
-					}
-					return nil
-				}),
-
-			huh.NewInput().
-				Title("Company name").
-				Description("Your Woffu subdomain (e.g. dogfydiet)").
-				Placeholder("yourcompany").
-				Value(&company).
-				Validate(func(s string) error {
-					if len(s) < 1 {
-						return fmt.Errorf("company name cannot be empty")
-					}
-					return nil
-				}),
-		).Title("Woffu credentials"),
-	)
-
-	if err := credentialsForm.Run(); err != nil {
-		return err
-	}
-
-	companyURL := "https://" + company + ".woffu.com"
-	fmt.Printf("  %s %s\n\n", infoIcon, companyURL)
-
-	// --- Office location ---
-
-	officeLat, officeLon, err := locationPicker("Office location")
+				Value(&password),
+		).Title("Login to Woffu"),
+	).Run()
 	if err != nil {
 		return err
 	}
 
-	time.Sleep(time.Second) // Nominatim rate limit
+	// Extract company from email domain (user@dogfydiet.com → dogfydiet)
+	company := extractCompany(email)
+	companyURL := "https://" + company + ".woffu.com"
 
-	// --- Home location ---
+	// ── Step 2: Connect and fetch profile ──────────────────────────
+
+	var profile *woffu.UserProfile
+	var authErr error
+
+	client := woffu.NewWoffuClient("https://app.woffu.com/api")
+	companyClient := woffu.NewCompanyClient(companyURL)
+
+	err = spinner.New().
+		Title("Connecting to Woffu...").
+		Action(func() {
+			token, e := woffu.Authenticate(client, companyClient, email, password)
+			if e != nil {
+				authErr = e
+				return
+			}
+			profile, authErr = woffu.GetUserProfile(companyClient, token)
+		}).
+		Run()
+	if err != nil {
+		return err
+	}
+
+	// If auto-detected company failed, ask manually and retry
+	if authErr != nil {
+		fmt.Printf("  %s Could not connect with \"%s\". What's your Woffu subdomain?\n\n", sWarn, company)
+
+		var manualCompany string
+		huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Company subdomain").
+					Description("The part before .woffu.com").
+					Placeholder("dogfydiet").
+					Value(&manualCompany),
+			),
+		).Run()
+
+		company = manualCompany
+		companyURL = "https://" + company + ".woffu.com"
+		companyClient = woffu.NewCompanyClient(companyURL)
+
+		err = spinner.New().
+			Title("Retrying...").
+			Action(func() {
+				token, e := woffu.Authenticate(client, companyClient, email, password)
+				if e != nil {
+					authErr = e
+					return
+				}
+				authErr = nil
+				profile, authErr = woffu.GetUserProfile(companyClient, token)
+			}).
+			Run()
+		if err != nil {
+			return err
+		}
+		if authErr != nil {
+			return fmt.Errorf("login failed: %w", authErr)
+		}
+	}
+
+	fmt.Printf("  %s Logged in as %s\n", sOk, sBold.Render(profile.FullName))
+	fmt.Printf("  %s %s — %s, %s\n", sInfo, profile.CompanyName, profile.DepartmentName, profile.JobTitle)
+	fmt.Printf("  %s Office: %s\n\n", sInfo, profile.OfficeName)
+
+	// ── Step 3: Resolve office coordinates ─────────────────────────
+
+	var officeLat, officeLon float64
+
+	if profile.OfficeLatitude != nil && profile.OfficeLongitude != nil {
+		// Woffu has the coordinates
+		officeLat = *profile.OfficeLatitude
+		officeLon = *profile.OfficeLongitude
+		fmt.Printf("  %s Office coordinates from Woffu: %s\n\n",
+			sOk, sCoord.Render(fmt.Sprintf("%.4f, %.4f", officeLat, officeLon)))
+	} else {
+		// Geocode the office name
+		fmt.Printf("  %s Office coordinates not in Woffu, searching...\n", sWarn)
+
+		var results []geocode.Result
+		spinner.New().
+			Title(fmt.Sprintf("Geocoding \"%s\"...", profile.OfficeName)).
+			Action(func() {
+				results, _ = geocode.Search(profile.OfficeName, 5)
+			}).
+			Run()
+
+		if len(results) > 0 {
+			lat, lon, err := pickFromResults(results, "Office location")
+			if err != nil {
+				return err
+			}
+			officeLat, officeLon = lat, lon
+		} else {
+			// Fallback: ask manually
+			fmt.Println("  Could not auto-detect. Enter the office address:")
+			lat, lon, err := locationPicker("Office location")
+			if err != nil {
+				return err
+			}
+			officeLat, officeLon = lat, lon
+		}
+
+		time.Sleep(time.Second) // Nominatim rate limit
+	}
+
+	// ── Step 4: Home location ──────────────────────────────────────
 
 	homeLat, homeLon, err := locationPicker("Home location")
 	if err != nil {
 		return err
 	}
 
-	// --- Schedule ---
+	// ── Step 5: Schedule ───────────────────────────────────────────
 
 	var useDefaultSchedule bool
-
 	huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
@@ -116,13 +198,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	tz := zone
 
 	if !useDefaultSchedule {
-		schedule, tz, err = customScheduleForm(zone)
-		if err != nil {
-			return err
-		}
+		schedule, tz, _ = customScheduleForm(zone)
 	}
 
-	// --- Telegram ---
+	// ── Step 6: Telegram ───────────────────────────────────────────
 
 	var wantTelegram bool
 	var telegramToken, telegramChatID string
@@ -131,11 +210,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Enable Telegram notifications?").
-				Description("Get a message every time you clock in/out").
+				Description("Get a message every time you clock in").
 				Affirmative("Yes").
 				Negative("Skip").
 				Value(&wantTelegram),
-		).Title("Notifications"),
+		),
 	).Run()
 
 	var telegramCfg config.TelegramConfig
@@ -144,25 +223,18 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Bot Token").
-					Description("Create one at @BotFather on Telegram").
-					Placeholder("123456:ABC-DEF...").
+					Description("Create one at @BotFather").
 					Value(&telegramToken),
 				huh.NewInput().
 					Title("Chat ID").
-					Description("Get yours at @userinfobot on Telegram").
-					Placeholder("987654321").
+					Description("Get yours at @userinfobot").
 					Value(&telegramChatID),
 			).Title("Telegram"),
 		).Run()
-
-		telegramCfg = config.TelegramConfig{
-			BotToken: telegramToken,
-			ChatID:   telegramChatID,
-		}
-		fmt.Printf("  %s Telegram notifications enabled\n\n", successIcon)
+		telegramCfg = config.TelegramConfig{BotToken: telegramToken, ChatID: telegramChatID}
 	}
 
-	// --- Save ---
+	// ── Step 7: Save ───────────────────────────────────────────────
 
 	cfg := &config.Config{
 		WoffuURL:        "https://app.woffu.com/api",
@@ -177,76 +249,125 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		Telegram:        telegramCfg,
 	}
 
-	err = spinner.New().
-		Title("Saving config...").
+	spinner.New().
+		Title("Saving...").
 		Action(func() {
 			config.Save(cfg)
 			config.SetPassword(email, password)
 		}).
 		Run()
-	if err != nil {
-		return err
-	}
 
-	fmt.Printf("  %s Config saved to ~/.woffuk.yaml\n", successIcon)
-	fmt.Printf("  %s Password saved to OS keychain\n\n", successIcon)
+	fmt.Printf("  %s Config saved\n", sOk)
+	fmt.Printf("  %s Password in keychain\n\n", sOk)
 
-	// --- GitHub ---
+	// ── Step 8: GitHub ─────────────────────────────────────────────
 
 	var wantGitHub bool
-
 	huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Set up GitHub Actions for auto-signing?").
-				Description("Forks this repo, sets secrets, enables workflows").
+				Title("Set up GitHub Actions?").
+				Description("Fork, configure secrets, enable auto-signing").
 				Affirmative("Yes").
 				Negative("Skip").
 				Value(&wantGitHub),
-		).Title("GitHub Actions"),
+		),
 	).Run()
 
 	if wantGitHub {
 		var forkName string
-		err = spinner.New().
+		var ghErr error
+		spinner.New().
 			Title("Setting up GitHub...").
 			Action(func() {
-				forkName, err = gh.ForkAndSetup(cfg, password)
+				forkName, ghErr = gh.ForkAndSetup(cfg, password)
 			}).
 			Run()
-		if err != nil {
-			return fmt.Errorf("github setup: %w", err)
+
+		if ghErr != nil {
+			fmt.Printf("  %s GitHub setup failed: %s\n", sWarn, ghErr)
+		} else {
+			cfg.GithubFork = forkName
+			config.Save(cfg)
+			fmt.Printf("  %s Fork: %s\n", sOk, forkName)
+			fmt.Printf("  %s Secrets + workflows configured\n", sOk)
 		}
-
-		cfg.GithubFork = forkName
-		config.Save(cfg)
-
-		fmt.Printf("  %s Fork: %s\n", successIcon, forkName)
-		fmt.Printf("  %s Secrets configured\n", successIcon)
-		fmt.Printf("  %s GitHub Actions enabled\n", successIcon)
 	}
 
-	// --- Done ---
+	// ── Done ───────────────────────────────────────────────────────
 
 	fmt.Println()
-	fmt.Println(titleStyle.Render("Setup complete!"))
+	fmt.Println(sTitle.Render("All set!"))
+	fmt.Printf("  %s %s — %s\n", sInfo, sBold.Render(profile.FullName), profile.CompanyName)
+	fmt.Printf("  %s Office: %.4f, %.4f\n", sInfo, officeLat, officeLon)
+	fmt.Printf("  %s Home:   %.4f, %.4f\n", sInfo, homeLat, homeLon)
+	fmt.Println()
 	printSetupSchedule(schedule)
 	fmt.Println()
-	fmt.Printf("  Run %s to open the dashboard.\n\n", lipgloss.NewStyle().Bold(true).Render("woffuk"))
+	fmt.Printf("  Run %s to open the dashboard.\n\n", sBold.Render("woffuk"))
 
 	return nil
+}
+
+func pickFromResults(results []geocode.Result, title string) (float64, float64, error) {
+	if len(results) == 1 {
+		r := results[0]
+		var confirm bool
+		huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title(fmt.Sprintf("Is this your %s?", strings.ToLower(title))).
+					Description(fmt.Sprintf("%s  %s", r.DisplayName, sCoord.Render(fmt.Sprintf("(%.4f, %.4f)", r.Lat, r.Lon)))).
+					Affirmative("Yes").
+					Negative("Search manually").
+					Value(&confirm),
+			),
+		).Run()
+
+		if confirm {
+			fmt.Printf("  %s %s\n\n", sOk, sCoord.Render(fmt.Sprintf("%.4f, %.4f", r.Lat, r.Lon)))
+			return r.Lat, r.Lon, nil
+		}
+		return locationPicker(title)
+	}
+
+	options := make([]huh.Option[int], 0, len(results)+1)
+	for i, r := range results {
+		options = append(options, huh.NewOption(
+			fmt.Sprintf("%s  %s", r.DisplayName, sCoord.Render(fmt.Sprintf("(%.4f, %.4f)", r.Lat, r.Lon))),
+			i,
+		))
+	}
+	options = append(options, huh.NewOption(sDim.Render("None — search manually"), -1))
+
+	var choice int
+	huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[int]().
+				Title(title).
+				Options(options...).
+				Value(&choice),
+		),
+	).Run()
+
+	if choice == -1 {
+		return locationPicker(title)
+	}
+
+	r := results[choice]
+	fmt.Printf("  %s %s\n\n", sOk, sCoord.Render(fmt.Sprintf("%.4f, %.4f", r.Lat, r.Lon)))
+	return r.Lat, r.Lon, nil
 }
 
 func locationPicker(title string) (float64, float64, error) {
 	for {
 		var query string
-
 		huh.NewForm(
 			huh.NewGroup(
 				huh.NewInput().
-					Title("Search for a place").
+					Title("Search").
 					Description("Street, building, city...").
-					Placeholder("Passeig Zona Franca 28 Barcelona").
+					Placeholder("Carrer Vistula 12 Segur de Calafell").
 					Value(&query).
 					Validate(func(s string) error {
 						if len(s) < 3 {
@@ -260,90 +381,43 @@ func locationPicker(title string) (float64, float64, error) {
 		var results []geocode.Result
 		var searchErr error
 
-		err := spinner.New().
+		spinner.New().
 			Title("Searching...").
 			Action(func() {
 				results, searchErr = geocode.Search(query, 5)
 			}).
 			Run()
-		if err != nil {
-			return 0, 0, err
-		}
 
 		if searchErr != nil {
-			fmt.Printf("  Error: %s. Try again.\n\n", searchErr)
+			fmt.Printf("  %s %s\n\n", sWarn, searchErr)
 			continue
 		}
 
 		if len(results) == 0 {
-			fmt.Println("  No results. Try adding more details (city, country).")
-			fmt.Println()
+			fmt.Printf("  %s No results. Try with more details.\n\n", sWarn)
 			continue
 		}
 
-		// Build options for the select
-		options := make([]huh.Option[int], 0, len(results)+1)
-		for i, r := range results {
-			options = append(options, huh.NewOption(
-				fmt.Sprintf("%s  %s", r.DisplayName, coordStyle.Render(fmt.Sprintf("(%.4f, %.4f)", r.Lat, r.Lon))),
-				i,
-			))
+		lat, lon, err := pickFromResults(results, title)
+		if err != nil {
+			return 0, 0, err
 		}
-		options = append(options, huh.NewOption("None of these — search again", -1))
-
-		var choice int
-
-		huh.NewForm(
-			huh.NewGroup(
-				huh.NewSelect[int]().
-					Title("Pick a location").
-					Options(options...).
-					Value(&choice),
-			),
-		).Run()
-
-		if choice == -1 {
-			continue
-		}
-
-		r := results[choice]
-		fmt.Printf("  %s %s\n", successIcon, r.DisplayName)
-		fmt.Printf("  %s %.6f, %.6f\n\n", infoIcon, r.Lat, r.Lon)
-		return r.Lat, r.Lon, nil
+		return lat, lon, nil
 	}
 }
 
 func customScheduleForm(defaultTz string) (config.Schedule, string, error) {
 	var monTimes, tueTimes, wedTimes, thuTimes, friTimes, tz string
-
 	tz = defaultTz
 
 	huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().
-				Title("Timezone").
-				Value(&tz),
-			huh.NewInput().
-				Title("Monday").
-				Description("HH:MM separated by commas, or 'off'").
-				Placeholder("08:30, 13:30, 14:15, 17:30").
-				Value(&monTimes),
-			huh.NewInput().
-				Title("Tuesday").
-				Placeholder("08:30, 13:30, 14:15, 17:30").
-				Value(&tueTimes),
-			huh.NewInput().
-				Title("Wednesday").
-				Placeholder("08:30, 13:30, 14:15, 17:30").
-				Value(&wedTimes),
-			huh.NewInput().
-				Title("Thursday").
-				Placeholder("08:30, 13:30, 14:15, 17:30").
-				Value(&thuTimes),
-			huh.NewInput().
-				Title("Friday").
-				Placeholder("08:00, 15:00").
-				Value(&friTimes),
+			huh.NewInput().Title("Timezone").Value(&tz),
+			huh.NewInput().Title("Monday").Description("HH:MM,HH:MM or 'off'").Placeholder("08:30, 13:30, 14:15, 17:30").Value(&monTimes),
+			huh.NewInput().Title("Tuesday").Placeholder("08:30, 13:30, 14:15, 17:30").Value(&tueTimes),
+			huh.NewInput().Title("Wednesday").Placeholder("08:30, 13:30, 14:15, 17:30").Value(&wedTimes),
+			huh.NewInput().Title("Thursday").Placeholder("08:30, 13:30, 14:15, 17:30").Value(&thuTimes),
+			huh.NewInput().Title("Friday").Placeholder("08:00, 15:00").Value(&friTimes),
 		).Title("Custom schedule"),
 	).Run()
 
@@ -376,6 +450,22 @@ func parseDayInput(input string) config.DaySchedule {
 		}
 	}
 	return config.DaySchedule{Enabled: true, Times: times}
+}
+
+// extractCompany gets the company subdomain from an email address.
+// user@dogfydiet.com → dogfydiet
+func extractCompany(email string) string {
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return ""
+	}
+	domain := parts[1]
+	// Remove TLD: dogfydiet.com → dogfydiet
+	domainParts := strings.Split(domain, ".")
+	if len(domainParts) >= 2 {
+		return domainParts[0]
+	}
+	return domain
 }
 
 func printSetupSchedule(s config.Schedule) {
