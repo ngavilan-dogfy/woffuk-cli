@@ -16,10 +16,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/geocode"
-	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffux/internal/config"
+	"github.com/ngavilan-dogfy/woffux/internal/geocode"
+	gh "github.com/ngavilan-dogfy/woffux/internal/github"
+	"github.com/ngavilan-dogfy/woffux/internal/woffu"
 )
 
 var (

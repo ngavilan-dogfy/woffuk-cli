@@ -1,4 +1,4 @@
-module github.com/ngavilan-dogfy/woffuk-cli
+module github.com/ngavilan-dogfy/woffux
 
 go 1.25.6
 

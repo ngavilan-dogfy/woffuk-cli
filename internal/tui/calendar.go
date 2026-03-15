@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffux/internal/woffu"
 )
 
 const cellWidth = 6 // wider cells to fit badge

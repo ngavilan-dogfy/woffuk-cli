@@ -11,10 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
-	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/notify"
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffux/internal/config"
+	gh "github.com/ngavilan-dogfy/woffux/internal/github"
+	"github.com/ngavilan-dogfy/woffux/internal/notify"
+	"github.com/ngavilan-dogfy/woffux/internal/woffu"
 )
 
 // ── Tab indices ──

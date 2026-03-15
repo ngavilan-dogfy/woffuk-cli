@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffux/internal/woffu"
 )
 
 var statusJSON bool

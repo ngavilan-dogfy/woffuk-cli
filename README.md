@@ -7,8 +7,8 @@
 <p align="center">Automatic clock in/out for <a href="https://app.woffu.com">Woffu</a>. Set it up once, never think about it again.</p>
 
 <p align="center">
-  <a href="https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest"><img src="https://img.shields.io/github/v/release/ngavilan-dogfy/woffuk-cli?style=flat-square&color=7c3aed&label=release" alt="Release"></a>
-  <a href="https://github.com/ngavilan-dogfy/woffuk-cli/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/ngavilan-dogfy/woffuk-cli/release.yml?style=flat-square&label=build" alt="Build"></a>
+  <a href="https://github.com/ngavilan-dogfy/woffux/releases/latest"><img src="https://img.shields.io/github/v/release/ngavilan-dogfy/woffux?style=flat-square&color=7c3aed&label=release" alt="Release"></a>
+  <a href="https://github.com/ngavilan-dogfy/woffux/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/ngavilan-dogfy/woffux/release.yml?style=flat-square&label=build" alt="Build"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/go-%3E%3D1.24-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License"></a>
@@ -31,7 +31,7 @@
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ngavilan-dogfy/woffuk-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ngavilan-dogfy/woffux/main/install.sh | sh
 ```
 
 Downloads the correct binary for your OS/arch. No dependencies.
@@ -41,7 +41,7 @@ Downloads the correct binary for your OS/arch. No dependencies.
 <details>
 <summary><strong>Download binary manually</strong></summary>
 
-Go to [Releases](https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest) and download:
+Go to [Releases](https://github.com/ngavilan-dogfy/woffux/releases/latest) and download:
 
 | Platform | File |
 |---|---|
@@ -61,13 +61,13 @@ sudo mv woffux-darwin-arm64 /usr/local/bin/woffux
 <summary><strong>Build from source (Go 1.24+)</strong></summary>
 
 ```bash
-go install github.com/ngavilan-dogfy/woffuk-cli/cmd/woffux@latest
+go install github.com/ngavilan-dogfy/woffux/cmd/woffux@latest
 ```
 
 Or clone and build:
 
 ```bash
-git clone https://github.com/ngavilan-dogfy/woffuk-cli.git
+git clone https://github.com/ngavilan-dogfy/woffux.git
 cd woffux-cli
 go build -o woffux ./cmd/woffux
 sudo mv woffux /usr/local/bin/

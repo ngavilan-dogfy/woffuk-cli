@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffux/internal/woffu"
 )
 
 type TelegramConfig struct {

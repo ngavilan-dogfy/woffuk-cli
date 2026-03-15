@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffux/internal/config"
 )
 
-const upstreamRepo = "ngavilan-dogfy/woffuk-cli"
+const upstreamRepo = "ngavilan-dogfy/woffux"
 
 // ForkAndSetup forks the upstream repo (or uses existing), sets secrets, generates workflows, and pushes.
 func ForkAndSetup(cfg *config.Config, password string) (string, error) {

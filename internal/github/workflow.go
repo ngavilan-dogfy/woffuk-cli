@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
+	"github.com/ngavilan-dogfy/woffux/internal/config"
 )
 
 // CronEntry represents a single cron schedule line with a comment.
@@ -131,7 +131,7 @@ jobs:
     steps:
       - name: Download woffux
         run: |
-          curl -fsSL "https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest/download/woffux-linux-amd64" -o woffux
+          curl -fsSL "https://github.com/ngavilan-dogfy/woffux/releases/latest/download/woffux-linux-amd64" -o woffux
           chmod +x woffux
 
       - name: Random delay (2-5 min)
@@ -171,7 +171,7 @@ jobs:
     steps:
       - name: Download woffux
         run: |
-          curl -fsSL "https://github.com/ngavilan-dogfy/woffuk-cli/releases/latest/download/woffux-linux-amd64" -o woffux
+          curl -fsSL "https://github.com/ngavilan-dogfy/woffux/releases/latest/download/woffux-linux-amd64" -o woffux
           chmod +x woffux
 
       - name: Sign

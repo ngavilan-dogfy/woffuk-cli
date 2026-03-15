@@ -31,7 +31,7 @@ var updateCmd = &cobra.Command{
 			Title("Checking for updates...").
 			Action(func() {
 				out, err := exec.Command("gh", "api",
-					"repos/ngavilan-dogfy/woffuk-cli/releases/latest",
+					"repos/ngavilan-dogfy/woffux/releases/latest",
 					"--jq", ".tag_name").Output()
 				if err != nil {
 					checkErr = err
@@ -70,7 +70,7 @@ var updateCmd = &cobra.Command{
 
 		// Download
 		binary := fmt.Sprintf("woffux-%s-%s", runtime.GOOS, goArch())
-		url := fmt.Sprintf("https://github.com/ngavilan-dogfy/woffuk-cli/releases/download/%s/%s", latestTag, binary)
+		url := fmt.Sprintf("https://github.com/ngavilan-dogfy/woffux/releases/download/%s/%s", latestTag, binary)
 
 		var downloadErr error
 		spinner.New().

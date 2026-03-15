@@ -1,6 +1,6 @@
 package main
 
-import "github.com/ngavilan-dogfy/woffuk-cli/cmd"
+import "github.com/ngavilan-dogfy/woffux/cmd"
 
 func main() {
 	cmd.Execute()

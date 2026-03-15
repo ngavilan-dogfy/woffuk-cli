@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
-	gh "github.com/ngavilan-dogfy/woffuk-cli/internal/github"
+	"github.com/ngavilan-dogfy/woffux/internal/config"
+	gh "github.com/ngavilan-dogfy/woffux/internal/github"
 )
 
 var configCmd = &cobra.Command{

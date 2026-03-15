@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/config"
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/notify"
-	"github.com/ngavilan-dogfy/woffuk-cli/internal/woffu"
+	"github.com/ngavilan-dogfy/woffux/internal/config"
+	"github.com/ngavilan-dogfy/woffux/internal/notify"
+	"github.com/ngavilan-dogfy/woffux/internal/woffu"
 )
 
 var signForce bool

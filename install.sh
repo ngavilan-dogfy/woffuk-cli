@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-REPO="ngavilan-dogfy/woffuk-cli"
+REPO="ngavilan-dogfy/woffux"
 INSTALL_DIR="/usr/local/bin"
 
 # Colors
