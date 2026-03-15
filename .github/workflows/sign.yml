@@ -2,18 +2,18 @@ name: Auto Sign
 
 on:
   schedule:
-    - cron: '0 7 * 1-3,11-12 5'  # Fri 08:00 (UTC+1, standard)
-    - cron: '0 6 * 4-10 5'  # Fri 08:00 (UTC+2, DST)
-    - cron: '0 14 * 1-3,11-12 5'  # Fri 15:00 (UTC+1, standard)
-    - cron: '0 13 * 4-10 5'  # Fri 15:00 (UTC+2, DST)
-    - cron: '30 7 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 08:30 (UTC+1, standard)
-    - cron: '30 6 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 08:30 (UTC+2, DST)
-    - cron: '30 12 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 13:30 (UTC+1, standard)
-    - cron: '30 11 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 13:30 (UTC+2, DST)
-    - cron: '15 13 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 14:15 (UTC+1, standard)
-    - cron: '15 12 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 14:15 (UTC+2, DST)
-    - cron: '30 16 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 17:30 (UTC+1, standard)
-    - cron: '30 15 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 17:30 (UTC+2, DST)
+    - cron: '10 7 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 08:10 (UTC+1, standard)
+    - cron: '10 6 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 08:10 (UTC+2, DST)
+    - cron: '40 12 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 13:40 (UTC+1, standard)
+    - cron: '40 11 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 13:40 (UTC+2, DST)
+    - cron: '32 13 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 14:32 (UTC+1, standard)
+    - cron: '32 12 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 14:32 (UTC+2, DST)
+    - cron: '31 16 * 1-3,11-12 1,2,3,4'  # Mon-Tue-Wed-Thu 17:31 (UTC+1, standard)
+    - cron: '31 15 * 4-10 1,2,3,4'  # Mon-Tue-Wed-Thu 17:31 (UTC+2, DST)
+    - cron: '30 7 * 1-3,11-12 5'  # Fri 08:30 (UTC+1, standard)
+    - cron: '30 6 * 4-10 5'  # Fri 08:30 (UTC+2, DST)
+    - cron: '10 14 * 1-3,11-12 5'  # Fri 15:10 (UTC+1, standard)
+    - cron: '10 13 * 4-10 5'  # Fri 15:10 (UTC+2, DST)
 
 concurrency:
   group: sign
