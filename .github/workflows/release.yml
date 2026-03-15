@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w" -o dist/woffuk-darwin-arm64  .
+          GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w" -o dist/woffuk-darwin-amd64  .
+          GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w" -o dist/woffuk-linux-amd64   .
+          GOOS=linux   GOARCH=arm64 go build -ldflags="-s -w" -o dist/woffuk-linux-arm64   .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/woffuk-darwin-arm64
+            dist/woffuk-darwin-amd64
+            dist/woffuk-linux-amd64
+            dist/woffuk-linux-arm64
