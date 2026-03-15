@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,10 +25,10 @@ var setupCmd = &cobra.Command{
 		fmt.Println("=== woffuk setup ===")
 		fmt.Println()
 
-		// Email
+		// --- Woffu credentials ---
+
 		email := prompt(reader, "Woffu email")
 
-		// Password (masked)
 		fmt.Print("Woffu password: ")
 		passBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
@@ -36,42 +37,37 @@ var setupCmd = &cobra.Command{
 		password := string(passBytes)
 		fmt.Println()
 
-		// Company URL
 		company := prompt(reader, "Company name (e.g. dogfydiet)")
 		companyURL := "https://" + company + ".woffu.com"
-		fmt.Printf("  Company URL: %s\n", companyURL)
+		fmt.Printf("  -> %s\n", companyURL)
 
-		// Office address
+		// --- Locations ---
+
 		fmt.Println()
-		officeAddr := prompt(reader, "Office address")
-		fmt.Println("  Geocoding...")
-		officeResult, err := geocode.Geocode(officeAddr)
+		fmt.Println("=== Office location ===")
+		fmt.Println()
+		officeLat, officeLon, err := promptLocation(reader, "Where is your office?")
 		if err != nil {
-			return fmt.Errorf("geocode office: %w", err)
+			return err
 		}
-		fmt.Printf("  Found: %s\n", officeResult.DisplayName)
-		fmt.Printf("  Coordinates: %.4f, %.4f\n", officeResult.Lat, officeResult.Lon)
 
-		// Nominatim rate limit: 1 req/sec
+		// Nominatim rate limit
 		time.Sleep(time.Second)
 
-		// Home address
 		fmt.Println()
-		homeAddr := prompt(reader, "Home address")
-		fmt.Println("  Geocoding...")
-		homeResult, err := geocode.Geocode(homeAddr)
+		fmt.Println("=== Home location ===")
+		fmt.Println()
+		homeLat, homeLon, err := promptLocation(reader, "Where is your home?")
 		if err != nil {
-			return fmt.Errorf("geocode home: %w", err)
+			return err
 		}
-		fmt.Printf("  Found: %s\n", homeResult.DisplayName)
-		fmt.Printf("  Coordinates: %.4f, %.4f\n", homeResult.Lat, homeResult.Lon)
 
-		// Schedule configuration
+		// --- Schedule ---
+
 		fmt.Println()
 		fmt.Println("=== Auto-sign schedule ===")
 		fmt.Println()
 
-		// Detect timezone
 		zone, _ := time.Now().Zone()
 		tz := prompt(reader, fmt.Sprintf("Timezone [%s]", zone))
 		if tz == "" {
@@ -98,11 +94,12 @@ var setupCmd = &cobra.Command{
 			schedule.Friday = promptDay(reader, "Friday", schedule.Friday)
 		}
 
-		// Telegram notifications (optional)
+		// --- Telegram (optional) ---
+
 		fmt.Println()
 		fmt.Println("=== Telegram notifications (optional) ===")
 		fmt.Println()
-		telegramToken := prompt(reader, "Telegram Bot Token (or Enter to skip)")
+		telegramToken := prompt(reader, "Telegram Bot Token (Enter to skip)")
 		var telegramCfg config.TelegramConfig
 		if telegramToken != "" {
 			telegramChatID := prompt(reader, "Telegram Chat ID")
@@ -112,18 +109,19 @@ var setupCmd = &cobra.Command{
 			}
 			fmt.Println("  Telegram notifications enabled")
 		} else {
-			fmt.Println("  Skipped — you can configure later in ~/.woffuk.yaml")
+			fmt.Println("  Skipped")
 		}
 
-		// Save config
+		// --- Save ---
+
 		cfg := &config.Config{
 			WoffuURL:        "https://app.woffu.com/api",
 			WoffuCompanyURL: companyURL,
 			WoffuEmail:      email,
-			Latitude:        officeResult.Lat,
-			Longitude:       officeResult.Lon,
-			HomeLatitude:    homeResult.Lat,
-			HomeLongitude:   homeResult.Lon,
+			Latitude:        officeLat,
+			Longitude:       officeLon,
+			HomeLatitude:    homeLat,
+			HomeLongitude:   homeLon,
 			Timezone:        tz,
 			Schedule:        schedule,
 			Telegram:        telegramCfg,
@@ -134,13 +132,13 @@ var setupCmd = &cobra.Command{
 		}
 		fmt.Println("\nConfig saved to ~/.woffuk.yaml")
 
-		// Save password to keychain
 		if err := config.SetPassword(email, password); err != nil {
 			return fmt.Errorf("save password to keychain: %w", err)
 		}
 		fmt.Println("Password saved to OS keychain")
 
-		// GitHub setup
+		// --- GitHub ---
+
 		fmt.Println()
 		forkAnswer := prompt(reader, "Fork repo and configure GitHub Actions? [Y/n]")
 		if forkAnswer == "" || strings.ToLower(forkAnswer) == "y" {
@@ -163,16 +161,69 @@ var setupCmd = &cobra.Command{
 		fmt.Println("Setup complete! Auto-signing is active.")
 		printSetupSchedule(schedule)
 		fmt.Println()
-		fmt.Println("Commands:")
-		fmt.Println("  woffuk              Open dashboard")
-		fmt.Println("  woffuk status       Today's status")
-		fmt.Println("  woffuk events       Available events")
-		fmt.Println("  woffuk sign         Sign manually")
-		fmt.Println("  woffuk schedule     View schedule")
-		fmt.Println("  woffuk schedule edit  Edit schedule")
+		fmt.Println("Run 'woffuk' to open the dashboard.")
 
 		return nil
 	},
+}
+
+// promptLocation handles the interactive location search with multiple results.
+func promptLocation(reader *bufio.Reader, question string) (float64, float64, error) {
+	for {
+		query := prompt(reader, question)
+		if query == "" {
+			continue
+		}
+
+		fmt.Println("  Searching...")
+		results, err := geocode.Search(query, 5)
+		if err != nil {
+			fmt.Printf("  Error: %s\n", err)
+			fmt.Println("  Try again with a different query.")
+			continue
+		}
+
+		if len(results) == 0 {
+			fmt.Println("  No results found. Try adding more details (city, country).")
+			continue
+		}
+
+		if len(results) == 1 {
+			r := results[0]
+			fmt.Printf("  Found: %s\n", r.DisplayName)
+			fmt.Printf("  Coordinates: %.6f, %.6f\n", r.Lat, r.Lon)
+			confirm := prompt(reader, "  Is this correct? [Y/n]")
+			if confirm == "" || strings.ToLower(confirm) == "y" {
+				return r.Lat, r.Lon, nil
+			}
+			fmt.Println("  Try again with a different query.")
+			continue
+		}
+
+		// Multiple results — let the user pick
+		fmt.Println()
+		for i, r := range results {
+			fmt.Printf("  %d) %s\n", i+1, r.DisplayName)
+		}
+		fmt.Println("  0) None of these — search again")
+		fmt.Println()
+
+		choice := prompt(reader, "  Pick a number")
+		n, err := strconv.Atoi(strings.TrimSpace(choice))
+		if err != nil || n < 0 || n > len(results) {
+			fmt.Println("  Invalid choice. Try again.")
+			continue
+		}
+
+		if n == 0 {
+			continue
+		}
+
+		r := results[n-1]
+		fmt.Printf("  Selected: %s\n", r.DisplayName)
+		fmt.Printf("  Coordinates: %.6f, %.6f\n", r.Lat, r.Lon)
+		return r.Lat, r.Lon, nil
+	}
 }
 
 func prompt(reader *bufio.Reader, label string) string {

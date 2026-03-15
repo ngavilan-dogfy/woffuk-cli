@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 type Result struct {
@@ -21,15 +22,19 @@ type nominatimResult struct {
 	DisplayName string `json:"display_name"`
 }
 
-// Geocode converts an address to GPS coordinates using Nominatim.
-func Geocode(address string) (*Result, error) {
-	u := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=1", url.QueryEscape(address))
+// Search returns up to `limit` geocoding results for the given query.
+func Search(query string, limit int) ([]Result, error) {
+	u := fmt.Sprintf(
+		"https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=%d&addressdetails=1",
+		url.QueryEscape(query), limit,
+	)
 
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "woffuk-cli/1.0 (github.com/ngavilan-dogfy/woffuk-cli)")
+	req.Header.Set("Accept-Language", "es,en")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -42,23 +47,50 @@ func Geocode(address string) (*Result, error) {
 		return nil, fmt.Errorf("read geocode response: %w", err)
 	}
 
-	var results []nominatimResult
-	if err := json.Unmarshal(body, &results); err != nil {
+	var raw []nominatimResult
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("parse geocode response: %w", err)
 	}
 
+	results := make([]Result, 0, len(raw))
+	for _, r := range raw {
+		lat, err := strconv.ParseFloat(r.Lat, 64)
+		if err != nil {
+			continue
+		}
+		lon, err := strconv.ParseFloat(r.Lon, 64)
+		if err != nil {
+			continue
+		}
+		results = append(results, Result{
+			Lat:         lat,
+			Lon:         lon,
+			DisplayName: shortenDisplayName(r.DisplayName),
+		})
+	}
+
+	return results, nil
+}
+
+// Geocode returns the first result for backward compatibility.
+func Geocode(address string) (*Result, error) {
+	results, err := Search(address, 1)
+	if err != nil {
+		return nil, err
+	}
 	if len(results) == 0 {
-		return nil, fmt.Errorf("no results found for address: %s", address)
+		return nil, fmt.Errorf("no results found for: %s", address)
 	}
+	return &results[0], nil
+}
 
-	lat, err := strconv.ParseFloat(results[0].Lat, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parse latitude: %w", err)
+// shortenDisplayName trims overly long Nominatim display names.
+func shortenDisplayName(name string) string {
+	parts := strings.Split(name, ", ")
+	if len(parts) > 5 {
+		// Keep first 3 + last 2 (city, country)
+		short := append(parts[:3], parts[len(parts)-2:]...)
+		return strings.Join(short, ", ")
 	}
-	lon, err := strconv.ParseFloat(results[0].Lon, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parse longitude: %w", err)
-	}
-
-	return &Result{Lat: lat, Lon: lon, DisplayName: results[0].DisplayName}, nil
+	return name
 }
