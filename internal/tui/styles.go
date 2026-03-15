@@ -2,43 +2,74 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+// Colors
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			PaddingLeft(1)
-
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Padding(0, 1)
-
-	labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
-			Width(16)
-
-	valueStyle = lipgloss.NewStyle().
-			Bold(true)
-
-	greenStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("82")).
-			Bold(true)
-
-	redStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Bold(true)
-
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240"))
-
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			PaddingTop(1)
-
-	eventNameStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
-
-	eventValueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255")).
-			Bold(true)
+	colorPrimary   = lipgloss.Color("#c084fc") // Purple
+	colorSecondary = lipgloss.Color("#06B6D4") // Cyan
+	colorSuccess   = lipgloss.Color("#22c55e") // Green
+	colorDanger    = lipgloss.Color("#ef4444") // Red
+	colorWarning   = lipgloss.Color("#f59e0b") // Amber
+	colorMuted     = lipgloss.Color("#6b7280") // Gray
+	colorDim       = lipgloss.Color("#4b5563") // Dark gray
+	colorText      = lipgloss.Color("#f9fafb") // White
+	colorBg        = lipgloss.Color("#111827") // Dark bg
+	colorBarBg     = lipgloss.Color("#0f172a") // Darker bg
 )
+
+// Styles
+var (
+	sTitle = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorPrimary).
+		PaddingLeft(1)
+
+	sSubtitle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorSecondary)
+
+	sLabel = lipgloss.NewStyle().
+		Foreground(colorMuted).
+		Width(18)
+
+	sValue = lipgloss.NewStyle().
+		Foreground(colorText).
+		Bold(true)
+
+	sSuccess = lipgloss.NewStyle().
+			Foreground(colorSuccess).
+			Bold(true)
+
+	sDanger = lipgloss.NewStyle().
+		Foreground(colorDanger).
+		Bold(true)
+
+	sDimmed = lipgloss.NewStyle().
+		Foreground(colorDim)
+
+	sKey = lipgloss.NewStyle().
+		Foreground(colorSecondary).
+		Bold(true)
+
+	sHint = lipgloss.NewStyle().
+		Foreground(colorMuted)
+
+	sBox = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorDim).
+		Padding(0, 1)
+
+	sSection = lipgloss.NewStyle().
+			Foreground(colorSecondary).
+			Bold(true).
+			PaddingBottom(1)
+
+	sFlashSuccess = lipgloss.NewStyle().Foreground(colorSuccess)
+	sFlashError   = lipgloss.NewStyle().Foreground(colorDanger)
+
+	sSignIn  = lipgloss.NewStyle().Foreground(colorSuccess)
+	sSignOut = lipgloss.NewStyle().Foreground(colorDanger)
+)
+
+func hint(key, desc string) string {
+	return sKey.Render(key) + " " + sHint.Render(desc)
+}
