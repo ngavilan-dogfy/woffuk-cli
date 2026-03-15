@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,6 +45,7 @@ type autoToggleMsg struct{ enabled bool }
 type syncDoneMsg struct{}
 type clearFlashMsg struct{}
 type tickMsg time.Time
+type calendarDataMsg struct{ calendarDays []woffu.CalendarDay }
 type scheduleEditDoneMsg struct{}
 type execDoneMsg struct{ err error }
 
@@ -143,6 +145,13 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			now := time.Now()
 			d.cal = newCalendarGrid(now.Year(), now.Month(), msg.calendarDays)
 		} else if d.cal != nil {
+			d.cal.days = msg.calendarDays
+		}
+
+	case calendarDataMsg:
+		d.loading = false
+		d.calendarDays = msg.calendarDays
+		if d.cal != nil {
 			d.cal.days = msg.calendarDays
 		}
 
@@ -329,15 +338,15 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			d.cal.clearSelection()
 			return d, nil
 
-		// Month navigation
+		// Month navigation (lightweight fetch — no re-auth)
 		case "[", "H":
 			d.cal.prevMonth()
 			d.loading = true
-			return d, d.fetchData()
+			return d, d.fetchCalendarData()
 		case "]", "L":
 			d.cal.nextMonth()
 			d.loading = true
-			return d, d.fetchData()
+			return d, d.fetchCalendarData()
 
 		// Actions
 		case "enter":
@@ -912,6 +921,49 @@ func (d *Dashboard) fetchData() tea.Cmd {
 		}
 
 		return dataMsg{signInfo: info, events: events, profile: profile, slots: slots, calendarDays: calDays, userId: userId}
+	}
+}
+
+// fetchCalendarData fetches only calendar + requests + signs for the displayed month.
+// Uses cached token (no re-auth) and runs API calls in parallel.
+func (d *Dashboard) fetchCalendarData() tea.Cmd {
+	return func() tea.Msg {
+		calYear := d.cal.year
+		calMonth := d.cal.month
+
+		var calDays []woffu.CalendarDay
+		var reqs []woffu.UserRequest
+		var signs []woffu.SignRecord
+		var calErr error
+
+		var wg sync.WaitGroup
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			calDays, calErr = woffu.GetCalendarMonthYM(d.companyClient, d.token, calYear, calMonth)
+		}()
+
+		if d.userId > 0 {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				reqs, _ = woffu.GetMonthRequests(d.companyClient, d.token, d.userId, calYear, calMonth)
+			}()
+			go func() {
+				defer wg.Done()
+				signs, _ = woffu.GetMonthSigns(d.companyClient, d.token, calYear, calMonth)
+			}()
+		}
+
+		wg.Wait()
+
+		if calErr != nil {
+			return errMsg{calErr}
+		}
+
+		woffu.EnrichCalendarDays(calDays, reqs, signs)
+		return calendarDataMsg{calendarDays: calDays}
 	}
 }
 
