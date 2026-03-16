@@ -66,9 +66,39 @@ type woffuUserRequest struct {
 	NumberDaysRequested float64 `json:"NumberDaysRequested"`
 }
 
+// woffuSignSlot handles the Woffu API sign slots response.
+// The In/Out fields can be either a string ("2026-03-16T08:10:00.000")
+// or an object ({"Date": "...", "Time": "...", ...}). We use json.RawMessage
+// to handle both formats.
 type woffuSignSlot struct {
-	In  *string `json:"In"`
-	Out *string `json:"Out"`
+	In  json.RawMessage `json:"In"`
+	Out json.RawMessage `json:"Out"`
+}
+
+// extractSlotValue parses a sign slot field that can be either a JSON string
+// or a JSON object with a "Date" or "TrueDate" field.
+func extractSlotValue(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	// Try string first
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	// Try object with common Woffu fields
+	var obj struct {
+		TrueDate string `json:"TrueDate"`
+		Date     string `json:"Date"`
+		TrueTime string `json:"TrueTime"`
+	}
+	if json.Unmarshal(raw, &obj) == nil {
+		if obj.TrueDate != "" {
+			return obj.TrueDate
+		}
+		return obj.Date
+	}
+	return ""
 }
 
 type woffuCalendarEventEntry struct {
@@ -154,12 +184,9 @@ func GetTodaySlots(companyClient *Client, token string) ([]SignSlot, error) {
 
 	var slots []SignSlot
 	for _, s := range data {
-		slot := SignSlot{}
-		if s.In != nil {
-			slot.In = *s.In
-		}
-		if s.Out != nil {
-			slot.Out = *s.Out
+		slot := SignSlot{
+			In:  extractSlotValue(s.In),
+			Out: extractSlotValue(s.Out),
 		}
 		slots = append(slots, slot)
 	}

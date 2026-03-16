@@ -104,14 +104,82 @@ func localToUTC(hour, offsetHours int) int {
 	return utc
 }
 
+// signHours collects all unique sign hours from the schedule config.
+func signHours(schedule config.Schedule) []int {
+	seen := make(map[int]bool)
+	for _, day := range []config.DaySchedule{
+		schedule.Monday, schedule.Tuesday, schedule.Wednesday,
+		schedule.Thursday, schedule.Friday,
+	} {
+		if !day.Enabled {
+			continue
+		}
+		for _, t := range day.Times {
+			h, _ := parseTime(t.Time)
+			seen[h] = true
+		}
+	}
+	var hours []int
+	for h := range seen {
+		hours = append(hours, h)
+	}
+	return hours
+}
+
 // GenerateWorkflowYAML generates the auto-sign GitHub Actions workflow.
 // For DST zones, generates dual cron entries so local times stay correct year-round.
+// Transition months (e.g. March, October) appear in both standard and DST schedules;
+// a timezone guard step verifies that the cron's UTC hour + current offset produces
+// a valid configured sign hour — if not, the run is skipped (prevents double signing).
 func GenerateWorkflowYAML(schedule config.Schedule, tz string) string {
 	crons := GenerateCrons(schedule, tz)
+	isDST := hasDST(tz)
 
 	var cronLines []string
 	for _, c := range crons {
 		cronLines = append(cronLines, fmt.Sprintf("    - cron: '%s'  # %s", c.Cron, c.Comment))
+	}
+
+	// Resolve IANA timezone for the guard step
+	ianaZone := tz
+	if alias, ok := tzAliases[strings.ToUpper(tz)]; ok {
+		ianaZone = alias
+	}
+
+	// Build the timezone guard step (only for DST zones with overlapping months)
+	guardYAML := ""
+	guardCondition := ""
+	if isDST {
+		hours := signHours(schedule)
+		var hourStrs []string
+		for _, h := range hours {
+			hourStrs = append(hourStrs, strconv.Itoa(h))
+		}
+		hoursStr := strings.Join(hourStrs, " ")
+
+		guardYAML = fmt.Sprintf(`
+      - name: Timezone guard
+        id: tz
+        run: |
+          CRON_HOUR=$(echo "%s" | awk '{print $2}')
+          # Current UTC offset (in hours) for the configured timezone
+          OFFSET=$(TZ=%s date +%%z | sed 's/00$//;s/^+0/+/;s/^+//')
+          LOCAL_HOUR=$(( CRON_HOUR + OFFSET ))
+          if [ "$LOCAL_HOUR" -lt 0 ]; then LOCAL_HOUR=$(( LOCAL_HOUR + 24 )); fi
+          if [ "$LOCAL_HOUR" -ge 24 ]; then LOCAL_HOUR=$(( LOCAL_HOUR - 24 )); fi
+          SIGN_HOURS="%s"
+          MATCH=false
+          for h in $SIGN_HOURS; do
+            if [ "$LOCAL_HOUR" -eq "$h" ]; then MATCH=true; break; fi
+          done
+          if [ "$MATCH" = "false" ]; then
+            echo "Skipping: cron hour $CRON_HOUR + offset $OFFSET = local $LOCAL_HOUR, not a configured sign hour"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+`, "${{ github.event.schedule }}", ianaZone, hoursStr)
+		guardCondition = "\n        if: steps.tz.outputs.skip != 'true'"
 	}
 
 	return fmt.Sprintf(`name: Auto Sign
@@ -128,16 +196,17 @@ jobs:
   sign:
     name: Sign in Woffu
     runs-on: ubuntu-latest
-    steps:
-      - name: Download woffux
+    steps:%s
+
+      - name: Download woffux%s
         run: |
           curl -fsSL "https://github.com/ngavilan-dogfy/woffux/releases/latest/download/woffux-linux-amd64" -o woffux
           chmod +x woffux
 
-      - name: Random delay (2-5 min)
-        run: sleep $(( RANDOM %% 181 + 120 ))
+      - name: Random delay (2-5 min)%s
+        run: sleep $(( RANDOM %%%% 181 + 120 ))
 
-      - name: Sign
+      - name: Sign%s
         run: ./woffux sign
         env:
           WOFFU_URL: ${{ secrets.WOFFU_URL }}
@@ -150,7 +219,7 @@ jobs:
           WOFFU_HOME_LONGITUDE: ${{ secrets.WOFFU_HOME_LONGITUDE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-`, strings.Join(cronLines, "\n"))
+`, strings.Join(cronLines, "\n"), guardYAML, guardCondition, guardCondition, guardCondition)
 }
 
 // GenerateManualWorkflowYAML generates the manual sign workflow.
@@ -269,6 +338,11 @@ func hasDST(tz string) bool {
 
 // dstOffsets returns the standard and DST offsets (in hours) and the month ranges
 // when each applies. For non-DST zones, both offsets are the same.
+//
+// DST transitions happen mid-month (e.g., last Sunday of March/October in Europe).
+// Since GitHub Actions cron only supports month granularity, transition months are
+// included in BOTH standard and DST schedules — the worst case is a duplicate
+// trigger that gets deduplicated by the concurrency group.
 func dstOffsets(tz string) (stdOffset, dstOffset int, stdMonths, dstMonths string) {
 	loc := loadTimezone(tz)
 	jan := time.Date(2026, time.January, 15, 12, 0, 0, 0, loc)
@@ -283,14 +357,80 @@ func dstOffsets(tz string) (stdOffset, dstOffset int, stdMonths, dstMonths strin
 		return stdOffset, dstOffset, "1-12", ""
 	}
 
-	// Northern hemisphere DST: clocks forward in March, back in October
-	// Standard (winter): Nov-Mar, DST (summer): Apr-Oct
+	// Find the actual DST transition months by scanning the year
+	dstStartMonth, dstEndMonth := findDSTTransitions(loc)
+
 	if dstOffset > stdOffset {
-		return stdOffset, dstOffset, "1-3,11-12", "4-10"
+		// Northern hemisphere: DST in summer
+		// Standard months: from month after DST ends through month before DST starts,
+		// PLUS the transition months themselves (overlap ensures coverage)
+		stdMonths = monthRange(dstEndMonth, dstStartMonth)   // e.g., "1-3,10-12" (Oct-Mar, inclusive)
+		dstMonths = monthRange(dstStartMonth, dstEndMonth)   // e.g., "3-10" (Mar-Oct, inclusive)
+	} else {
+		// Southern hemisphere: DST in winter (reversed)
+		stdMonths = monthRange(dstStartMonth, dstEndMonth)
+		dstMonths = monthRange(dstEndMonth, dstStartMonth)
 	}
 
-	// Southern hemisphere: reversed
-	return stdOffset, dstOffset, "4-10", "1-3,11-12"
+	return stdOffset, dstOffset, stdMonths, dstMonths
+}
+
+// findDSTTransitions returns the months where DST starts and ends.
+func findDSTTransitions(loc *time.Location) (startMonth, endMonth time.Month) {
+	// Check offset at the 1st of each month to find transitions
+	prevOffset := 0
+	_, prevOffset = time.Date(2026, time.January, 1, 12, 0, 0, 0, loc).Zone()
+
+	for m := time.February; m <= time.December; m++ {
+		_, offset := time.Date(2026, m, 1, 12, 0, 0, 0, loc).Zone()
+		if offset != prevOffset {
+			if offset > prevOffset {
+				// Clocks went forward → DST started
+				// The transition happened in the previous month
+				startMonth = m - 1
+			} else {
+				// Clocks went back → DST ended
+				endMonth = m - 1
+			}
+		}
+		prevOffset = offset
+	}
+
+	// Handle December→January wrap
+	if startMonth == 0 || endMonth == 0 {
+		_, offDec := time.Date(2026, time.December, 1, 12, 0, 0, 0, loc).Zone()
+		_, offJan := time.Date(2027, time.January, 1, 12, 0, 0, 0, loc).Zone()
+		if offDec != offJan {
+			if offJan > offDec {
+				startMonth = time.December
+			} else {
+				endMonth = time.December
+			}
+		}
+	}
+
+	// Fallback: March/October (European default)
+	if startMonth == 0 {
+		startMonth = time.March
+	}
+	if endMonth == 0 {
+		endMonth = time.October
+	}
+
+	return startMonth, endMonth
+}
+
+// monthRange builds a cron month range string that includes both boundary months.
+// fromMonth and toMonth are both included.
+func monthRange(fromMonth, toMonth time.Month) string {
+	from := int(fromMonth)
+	to := int(toMonth)
+
+	if from <= to {
+		return fmt.Sprintf("%d-%d", from, to)
+	}
+	// Wraps around year boundary: e.g., Oct-Mar → "1-3,10-12"
+	return fmt.Sprintf("1-%d,%d-12", to, from)
 }
 
 func parseTime(t string) (hour, minute int) {

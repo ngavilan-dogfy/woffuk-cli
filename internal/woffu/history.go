@@ -1,7 +1,9 @@
 package woffu
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -14,14 +16,39 @@ type SignRecord struct {
 }
 
 type woffuSignRecord struct {
-	SignEventId    int    `json:"SignEventId"`
-	UserId         int    `json:"UserId"`
-	TrueDate       string `json:"TrueDate"`
-	TrueTime       string `json:"TrueTime"`
-	Date           string `json:"Date"`
-	SignIn         bool   `json:"SignIn"`
-	Latitude       float64 `json:"Latitude"`
-	Longitude      float64 `json:"Longitude"`
+	SignEventId int             `json:"SignEventId"`
+	UserId      int             `json:"UserId"`
+	TrueDate    string          `json:"TrueDate"`
+	TrueTime    string          `json:"TrueTime"`
+	Date        string          `json:"Date"`
+	SignIn      bool            `json:"SignIn"`
+	Latitude    flexibleFloat64 `json:"Latitude"`
+	Longitude   flexibleFloat64 `json:"Longitude"`
+}
+
+// flexibleFloat64 handles JSON fields that may be either a number or a string.
+type flexibleFloat64 float64
+
+func (f *flexibleFloat64) UnmarshalJSON(data []byte) error {
+	// Try number first
+	var n float64
+	if err := json.Unmarshal(data, &n); err == nil {
+		*f = flexibleFloat64(n)
+		return nil
+	}
+	// Try string
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		n, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			*f = 0
+			return nil
+		}
+		*f = flexibleFloat64(n)
+		return nil
+	}
+	*f = 0
+	return nil
 }
 
 // GetSignHistory fetches sign records for a date range.
