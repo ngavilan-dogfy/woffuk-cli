@@ -16,14 +16,14 @@ type CronEntry struct {
 }
 
 // GenerateCrons converts the schedule config into GitHub Actions cron expressions.
-// Handles DST automatically: for timezones with DST, generates two cron entries
-// per scheduled time (one for standard months, one for DST months) so that the
-// local time stays correct year-round.
+// For DST timezones, generates a single cron per sign time with comma-separated
+// UTC hours (e.g., "30 6,7 * * 1-4") covering both standard and DST offsets.
+// A timezone guard step at runtime verifies which offset is active.
 func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 	var entries []CronEntry
 
-	stdOff, dstOff, stdMonths, dstMonths := dstOffsets(tz)
-	isDST := dstMonths != ""
+	stdOff, dstOff := utcOffsets(tz)
+	isDST := stdOff != dstOff
 
 	// Group days by their schedule to produce compact cron expressions
 	type dayTimes struct {
@@ -70,21 +70,25 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 		for _, t := range g.times {
 			hour, minute := parseTime(t.Time)
 
-			// Standard time entry
-			utcHour := localToUTC(hour, stdOff)
+			utcHourStd := localToUTC(hour, stdOff)
 			if isDST {
-				cron := fmt.Sprintf("%d %d * %s %s", minute, utcHour, stdMonths, daysStr)
-				comment := fmt.Sprintf("%s %s (UTC%+d, standard)", namesStr, t.Time, stdOff)
-				entries = append(entries, CronEntry{Cron: cron, Comment: comment})
-
-				// DST entry with different offset
 				utcHourDST := localToUTC(hour, dstOff)
-				cronDST := fmt.Sprintf("%d %d * %s %s", minute, utcHourDST, dstMonths, daysStr)
-				commentDST := fmt.Sprintf("%s %s (UTC%+d, DST)", namesStr, t.Time, dstOff)
-				entries = append(entries, CronEntry{Cron: cronDST, Comment: commentDST})
+				if utcHourStd == utcHourDST {
+					cron := fmt.Sprintf("%d %d * * %s", minute, utcHourStd, daysStr)
+					comment := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, stdOff)
+					entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+				} else {
+					h1, h2 := utcHourStd, utcHourDST
+					if h1 > h2 {
+						h1, h2 = h2, h1
+					}
+					cron := fmt.Sprintf("%d %d,%d * * %s", minute, h1, h2, daysStr)
+					comment := fmt.Sprintf("%s %s (UTC%+d/UTC%+d)", namesStr, t.Time, stdOff, dstOff)
+					entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+				}
 			} else {
-				cron := fmt.Sprintf("%d %d * * %s", minute, utcHour, daysStr)
-				comment := fmt.Sprintf("%s %s (UTC%+d → %s local)", namesStr, t.Time, stdOff, t.Time)
+				cron := fmt.Sprintf("%d %d * * %s", minute, utcHourStd, daysStr)
+				comment := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, stdOff)
 				entries = append(entries, CronEntry{Cron: cron, Comment: comment})
 			}
 		}
@@ -104,9 +108,9 @@ func localToUTC(hour, offsetHours int) int {
 	return utc
 }
 
-// signHours collects all unique sign hours from the schedule config.
-func signHours(schedule config.Schedule) []int {
-	seen := make(map[int]bool)
+// signTimes collects all unique sign times (HH:MM) from the schedule config.
+func signTimes(schedule config.Schedule) []string {
+	seen := make(map[string]bool)
 	for _, day := range []config.DaySchedule{
 		schedule.Monday, schedule.Tuesday, schedule.Wednesday,
 		schedule.Thursday, schedule.Friday,
@@ -115,22 +119,20 @@ func signHours(schedule config.Schedule) []int {
 			continue
 		}
 		for _, t := range day.Times {
-			h, _ := parseTime(t.Time)
-			seen[h] = true
+			seen[t.Time] = true
 		}
 	}
-	var hours []int
-	for h := range seen {
-		hours = append(hours, h)
+	var times []string
+	for t := range seen {
+		times = append(times, t)
 	}
-	return hours
+	return times
 }
 
 // GenerateWorkflowYAML generates the auto-sign GitHub Actions workflow.
-// For DST zones, generates dual cron entries so local times stay correct year-round.
-// Transition months (e.g. March, October) appear in both standard and DST schedules;
-// a timezone guard step verifies that the cron's UTC hour + current offset produces
-// a valid configured sign hour — if not, the run is skipped (prevents double signing).
+// For DST zones, each cron covers both UTC offsets via comma-separated hours.
+// A timezone guard verifies the exact local HH:MM at runtime to prevent
+// double signing during DST transitions.
 func GenerateWorkflowYAML(schedule config.Schedule, tz string) string {
 	crons := GenerateCrons(schedule, tz)
 	isDST := hasDST(tz)
@@ -146,39 +148,36 @@ func GenerateWorkflowYAML(schedule config.Schedule, tz string) string {
 		ianaZone = alias
 	}
 
-	// Build the timezone guard step (only for DST zones with overlapping months)
+	// Build the timezone guard step (only for DST zones)
 	guardYAML := ""
 	guardCondition := ""
 	if isDST {
-		hours := signHours(schedule)
-		var hourStrs []string
-		for _, h := range hours {
-			hourStrs = append(hourStrs, strconv.Itoa(h))
-		}
-		hoursStr := strings.Join(hourStrs, " ")
+		times := signTimes(schedule)
+		timesStr := strings.Join(times, " ")
 
 		guardYAML = fmt.Sprintf(`
       - name: Timezone guard
         id: tz
         run: |
+          CRON_MIN=$(echo "%s" | awk '{print $1}')
           CRON_HOUR=$(echo "%s" | awk '{print $2}')
-          # Current UTC offset (in hours) for the configured timezone
           OFFSET=$(TZ=%s date +%%z | sed 's/00$//;s/^+0/+/;s/^+//')
           LOCAL_HOUR=$(( CRON_HOUR + OFFSET ))
           if [ "$LOCAL_HOUR" -lt 0 ]; then LOCAL_HOUR=$(( LOCAL_HOUR + 24 )); fi
           if [ "$LOCAL_HOUR" -ge 24 ]; then LOCAL_HOUR=$(( LOCAL_HOUR - 24 )); fi
-          SIGN_HOURS="%s"
+          LOCAL_TIME=$(printf "%%02d:%%02d" "$LOCAL_HOUR" "$CRON_MIN")
+          SIGN_TIMES="%s"
           MATCH=false
-          for h in $SIGN_HOURS; do
-            if [ "$LOCAL_HOUR" -eq "$h" ]; then MATCH=true; break; fi
+          for t in $SIGN_TIMES; do
+            if [ "$LOCAL_TIME" = "$t" ]; then MATCH=true; break; fi
           done
           if [ "$MATCH" = "false" ]; then
-            echo "Skipping: cron hour $CRON_HOUR + offset $OFFSET = local $LOCAL_HOUR, not a configured sign hour"
+            echo "Skipping: cron $CRON_HOUR:$CRON_MIN + offset $OFFSET = local $LOCAL_TIME, not a configured sign time"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-`, "${{ github.event.schedule }}", ianaZone, hoursStr)
+`, "${{ github.event.schedule }}", "${{ github.event.schedule }}", ianaZone, timesStr)
 		guardCondition = "\n        if: steps.tz.outputs.skip != 'true'"
 	}
 
@@ -318,14 +317,6 @@ func loadTimezone(tz string) *time.Location {
 	return loc
 }
 
-// timezoneOffsetHours computes the UTC offset in hours for the given timezone
-// at a specific reference time. This correctly handles DST transitions.
-func timezoneOffsetHours(tz string, at time.Time) int {
-	loc := loadTimezone(tz)
-	_, offset := at.In(loc).Zone()
-	return offset / 3600
-}
-
 // hasDST returns true if the timezone observes DST (different offsets in Jan vs Jul).
 func hasDST(tz string) bool {
 	loc := loadTimezone(tz)
@@ -336,101 +327,15 @@ func hasDST(tz string) bool {
 	return offJan != offJul
 }
 
-// dstOffsets returns the standard and DST offsets (in hours) and the month ranges
-// when each applies. For non-DST zones, both offsets are the same.
-//
-// DST transitions happen mid-month (e.g., last Sunday of March/October in Europe).
-// Since GitHub Actions cron only supports month granularity, transition months are
-// included in BOTH standard and DST schedules — the worst case is a duplicate
-// trigger that gets deduplicated by the concurrency group.
-func dstOffsets(tz string) (stdOffset, dstOffset int, stdMonths, dstMonths string) {
+// utcOffsets returns the standard and DST UTC offsets in hours for the timezone.
+// For non-DST zones, both values are the same.
+func utcOffsets(tz string) (stdOffset, dstOffset int) {
 	loc := loadTimezone(tz)
 	jan := time.Date(2026, time.January, 15, 12, 0, 0, 0, loc)
 	jul := time.Date(2026, time.July, 15, 12, 0, 0, 0, loc)
 	_, offJan := jan.Zone()
 	_, offJul := jul.Zone()
-
-	stdOffset = offJan / 3600
-	dstOffset = offJul / 3600
-
-	if stdOffset == dstOffset {
-		return stdOffset, dstOffset, "1-12", ""
-	}
-
-	// Find the actual DST transition months by scanning the year
-	dstStartMonth, dstEndMonth := findDSTTransitions(loc)
-
-	if dstOffset > stdOffset {
-		// Northern hemisphere: DST in summer
-		// Standard months: from month after DST ends through month before DST starts,
-		// PLUS the transition months themselves (overlap ensures coverage)
-		stdMonths = monthRange(dstEndMonth, dstStartMonth)   // e.g., "1-3,10-12" (Oct-Mar, inclusive)
-		dstMonths = monthRange(dstStartMonth, dstEndMonth)   // e.g., "3-10" (Mar-Oct, inclusive)
-	} else {
-		// Southern hemisphere: DST in winter (reversed)
-		stdMonths = monthRange(dstStartMonth, dstEndMonth)
-		dstMonths = monthRange(dstEndMonth, dstStartMonth)
-	}
-
-	return stdOffset, dstOffset, stdMonths, dstMonths
-}
-
-// findDSTTransitions returns the months where DST starts and ends.
-func findDSTTransitions(loc *time.Location) (startMonth, endMonth time.Month) {
-	// Check offset at the 1st of each month to find transitions
-	prevOffset := 0
-	_, prevOffset = time.Date(2026, time.January, 1, 12, 0, 0, 0, loc).Zone()
-
-	for m := time.February; m <= time.December; m++ {
-		_, offset := time.Date(2026, m, 1, 12, 0, 0, 0, loc).Zone()
-		if offset != prevOffset {
-			if offset > prevOffset {
-				// Clocks went forward → DST started
-				// The transition happened in the previous month
-				startMonth = m - 1
-			} else {
-				// Clocks went back → DST ended
-				endMonth = m - 1
-			}
-		}
-		prevOffset = offset
-	}
-
-	// Handle December→January wrap
-	if startMonth == 0 || endMonth == 0 {
-		_, offDec := time.Date(2026, time.December, 1, 12, 0, 0, 0, loc).Zone()
-		_, offJan := time.Date(2027, time.January, 1, 12, 0, 0, 0, loc).Zone()
-		if offDec != offJan {
-			if offJan > offDec {
-				startMonth = time.December
-			} else {
-				endMonth = time.December
-			}
-		}
-	}
-
-	// Fallback: March/October (European default)
-	if startMonth == 0 {
-		startMonth = time.March
-	}
-	if endMonth == 0 {
-		endMonth = time.October
-	}
-
-	return startMonth, endMonth
-}
-
-// monthRange builds a cron month range string that includes both boundary months.
-// fromMonth and toMonth are both included.
-func monthRange(fromMonth, toMonth time.Month) string {
-	from := int(fromMonth)
-	to := int(toMonth)
-
-	if from <= to {
-		return fmt.Sprintf("%d-%d", from, to)
-	}
-	// Wraps around year boundary: e.g., Oct-Mar → "1-3,10-12"
-	return fmt.Sprintf("1-%d,%d-12", to, from)
+	return offJan / 3600, offJul / 3600
 }
 
 func parseTime(t string) (hour, minute int) {

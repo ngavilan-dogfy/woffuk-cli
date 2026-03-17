@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,7 +28,7 @@ func ForkAndSetup(cfg *config.Config, password string) (string, error) {
 	}
 
 	// Check if user already owns the upstream repo (they're the author, not a forker)
-	isOwner := (username + "/woffux") == upstreamRepo
+	isOwner := forkName == upstreamRepo
 
 	if !isOwner {
 		// Check if fork already exists
@@ -48,8 +49,12 @@ func ForkAndSetup(cfg *config.Config, password string) (string, error) {
 	// Enable GitHub Actions
 	enableActions(forkName, token)
 
-	// Generate and push workflows (only for forks, not the upstream itself)
-	if !isOwner {
+	// Generate and push workflows
+	if isOwner {
+		if err := pushWorkflowsViaAPI(forkName, cfg); err != nil {
+			return "", fmt.Errorf("push workflows: %w", err)
+		}
+	} else {
 		if err := pushWorkflows(forkName, cfg); err != nil {
 			return "", fmt.Errorf("push workflows: %w", err)
 		}
@@ -70,12 +75,22 @@ func SyncSecrets(cfg *config.Config, password string) error {
 	return setSecrets(cfg.GithubFork, token, cfg, password)
 }
 
-// SyncWorkflows regenerates workflows from config and pushes to the fork.
+// SyncWorkflows regenerates workflows from config and pushes to the fork/repo.
+// For the repo owner, uses the GitHub Contents API to avoid conflicts with the
+// local working copy. For forks, uses the traditional clone+push approach.
 func SyncWorkflows(cfg *config.Config) error {
 	if cfg.GithubFork == "" {
 		return fmt.Errorf("no github fork configured — run 'woffux setup' first")
 	}
+	if isRepoOwner(cfg.GithubFork) {
+		return pushWorkflowsViaAPI(cfg.GithubFork, cfg)
+	}
 	return pushWorkflows(cfg.GithubFork, cfg)
+}
+
+// isRepoOwner checks if the given repo is the upstream (owner's repo, not a fork).
+func isRepoOwner(repo string) bool {
+	return repo == upstreamRepo
 }
 
 func setSecrets(repo, token string, cfg *config.Config, password string) error {
@@ -104,9 +119,63 @@ func setSecrets(repo, token string, cfg *config.Config, password string) error {
 	return nil
 }
 
+// pushWorkflowsViaAPI updates workflow files directly via the GitHub Contents API.
+// Used for the repo owner to avoid clone+push conflicts with the local working copy.
+func pushWorkflowsViaAPI(repo string, cfg *config.Config) error {
+	token, err := tokenForRepo(repo)
+	if err != nil {
+		return fmt.Errorf("resolve github token for %s: %w", repo, err)
+	}
+
+	workflows := map[string]string{
+		".github/workflows/sign.yml":        GenerateWorkflowYAML(cfg.Schedule, cfg.Timezone),
+		".github/workflows/sign-manual.yml": GenerateManualWorkflowYAML(),
+		".github/workflows/keepalive.yml":   GenerateKeepaliveWorkflowYAML(),
+	}
+
+	for path, content := range workflows {
+		if err := putFileViaAPI(repo, token, path, content); err != nil {
+			return fmt.Errorf("update %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+// putFileViaAPI creates or updates a file via the GitHub Contents API.
+func putFileViaAPI(repo, token, path, content string) error {
+	// Get the current file's SHA (required for updates)
+	sha := ""
+	out, err := ghOutputWithToken(token, "api",
+		fmt.Sprintf("repos/%s/contents/%s", repo, path),
+		"--jq", ".sha")
+	if err == nil {
+		sha = strings.TrimSpace(out)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+
+	body := fmt.Sprintf(`{"message":"chore: update %s from woffux","content":"%s"`,
+		filepath.Base(path), encoded)
+	if sha != "" {
+		body += fmt.Sprintf(`,"sha":"%s"`, sha)
+	}
+	body += "}"
+
+	cmd := exec.Command("gh", "api", "-X", "PUT",
+		fmt.Sprintf("repos/%s/contents/%s", repo, path),
+		"--input", "-")
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
+	cmd.Stdin = strings.NewReader(body)
+	out2, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out2)), err)
+	}
+	return nil
+}
+
+// pushWorkflows clones the repo, generates workflows, and pushes.
+// Used for fork users (not the repo owner).
 func pushWorkflows(repo string, cfg *config.Config) error {
-	// Resolve the gh auth token for the fork owner so it works regardless of
-	// which gh account is currently active.
 	token, err := tokenForRepo(repo)
 	if err != nil {
 		return fmt.Errorf("resolve github token for %s: %w", repo, err)
@@ -143,7 +212,7 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 		return err
 	}
 
-	// Generate keepalive workflow (prevents GitHub from disabling scheduled workflows)
+	// Generate keepalive workflow
 	keepaliveYAML := GenerateKeepaliveWorkflowYAML()
 	if err := os.WriteFile(filepath.Join(workflowDir, "keepalive.yml"), []byte(keepaliveYAML), 0644); err != nil {
 		return err
