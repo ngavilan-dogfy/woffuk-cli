@@ -20,27 +20,33 @@ func ForkAndSetup(cfg *config.Config, password string) (string, error) {
 	}
 	forkName := username + "/woffux"
 
+	// Resolve token for this account
+	token, err := tokenForRepo(forkName)
+	if err != nil {
+		return "", err
+	}
+
 	// Check if user already owns the upstream repo (they're the author, not a forker)
 	isOwner := (username + "/woffux") == upstreamRepo
 
 	if !isOwner {
 		// Check if fork already exists
-		existsErr := ghRun("api", "repos/"+forkName, "--silent")
+		existsErr := ghRunWithToken(token, "api", "repos/"+forkName, "--silent")
 		if existsErr != nil {
 			// Fork doesn't exist, create it
-			if err := ghRun("repo", "fork", upstreamRepo, "--clone=false"); err != nil {
+			if err := ghRunWithToken(token, "repo", "fork", upstreamRepo, "--clone=false"); err != nil {
 				return "", fmt.Errorf("could not fork repo: %w", err)
 			}
 		}
 	}
 
 	// Set secrets
-	if err := setSecrets(forkName, cfg, password); err != nil {
+	if err := setSecrets(forkName, token, cfg, password); err != nil {
 		return "", fmt.Errorf("set secrets on %s: %w", forkName, err)
 	}
 
 	// Enable GitHub Actions
-	enableActions(forkName)
+	enableActions(forkName, token)
 
 	// Generate and push workflows (only for forks, not the upstream itself)
 	if !isOwner {
@@ -57,7 +63,11 @@ func SyncSecrets(cfg *config.Config, password string) error {
 	if cfg.GithubFork == "" {
 		return fmt.Errorf("no github fork configured — run 'woffux setup' first")
 	}
-	return setSecrets(cfg.GithubFork, cfg, password)
+	token, err := tokenForRepo(cfg.GithubFork)
+	if err != nil {
+		return err
+	}
+	return setSecrets(cfg.GithubFork, token, cfg, password)
 }
 
 // SyncWorkflows regenerates workflows from config and pushes to the fork.
@@ -68,7 +78,7 @@ func SyncWorkflows(cfg *config.Config) error {
 	return pushWorkflows(cfg.GithubFork, cfg)
 }
 
-func setSecrets(repo string, cfg *config.Config, password string) error {
+func setSecrets(repo, token string, cfg *config.Config, password string) error {
 	secrets := map[string]string{
 		"WOFFU_URL":            cfg.WoffuURL,
 		"WOFFU_COMPANY_URL":    cfg.WoffuCompanyURL,
@@ -87,7 +97,7 @@ func setSecrets(repo string, cfg *config.Config, password string) error {
 	}
 
 	for name, value := range secrets {
-		if err := ghSetSecret(repo, name, value); err != nil {
+		if err := ghSetSecret(repo, token, name, value); err != nil {
 			return fmt.Errorf("set secret %s: %w", name, err)
 		}
 	}
@@ -95,6 +105,13 @@ func setSecrets(repo string, cfg *config.Config, password string) error {
 }
 
 func pushWorkflows(repo string, cfg *config.Config) error {
+	// Resolve the gh auth token for the fork owner so it works regardless of
+	// which gh account is currently active.
+	token, err := tokenForRepo(repo)
+	if err != nil {
+		return fmt.Errorf("resolve github token for %s: %w", repo, err)
+	}
+
 	// Clone the fork to a temp dir
 	tmpDir, err := os.MkdirTemp("", "woffux-workflows-*")
 	if err != nil {
@@ -102,13 +119,11 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Use gh repo clone with owner/name format (uses gh's authenticated token)
-	if err := runCmd(tmpDir, "gh", "repo", "clone", repo, tmpDir, "--", "--depth=1"); err != nil {
+	// Clone using HTTPS with the resolved token
+	cloneURL := fmt.Sprintf("https://x-access-token:%s@github.com/%s.git", token, repo)
+	if err := runCmd(tmpDir, "git", "clone", "--depth=1", cloneURL, tmpDir); err != nil {
 		return fmt.Errorf("clone fork: %w", err)
 	}
-
-	// Configure git to use gh for push auth
-	_ = runCmdSilent(tmpDir, "gh", "auth", "setup-git")
 
 	// Create .github/workflows directory
 	workflowDir := filepath.Join(tmpDir, ".github", "workflows")
@@ -150,10 +165,11 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 	return nil
 }
 
-func enableActions(repo string) {
+func enableActions(repo, token string) {
 	cmd := exec.Command("gh", "api", "-X", "PUT",
 		"repos/"+repo+"/actions/permissions",
 		"--input", "-")
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
 	cmd.Stdin = strings.NewReader(`{"enabled": true, "allowed_actions": "all"}`)
 	cmd.Run()
 }
@@ -162,6 +178,29 @@ func getGitHubUsername() (string, error) {
 	out, err := ghOutput("api", "user", "-q", ".login")
 	if err != nil {
 		return "", fmt.Errorf("get github username (is gh authenticated?): %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// tokenForRepo resolves the correct gh auth token for the given repo.
+// It extracts the owner from "owner/repo" and tries `gh auth token --user owner`.
+// Falls back to the default token if the owner-specific lookup fails.
+func tokenForRepo(repo string) (string, error) {
+	owner := repo
+	if idx := strings.IndexByte(repo, '/'); idx >= 0 {
+		owner = repo[:idx]
+	}
+
+	// Try owner-specific token first
+	out, err := ghOutput("auth", "token", "--user", owner)
+	if err == nil && strings.TrimSpace(out) != "" {
+		return strings.TrimSpace(out), nil
+	}
+
+	// Fall back to default account
+	out, err = ghOutput("auth", "token")
+	if err != nil {
+		return "", fmt.Errorf("no gh token available: %w", err)
 	}
 	return strings.TrimSpace(out), nil
 }
@@ -177,8 +216,23 @@ func ghOutput(args ...string) (string, error) {
 	return string(out), err
 }
 
-func ghSetSecret(repo, name, value string) error {
+// ghRunWithToken runs a gh command with GH_TOKEN set so it uses the correct account.
+func ghRunWithToken(token string, args ...string) error {
+	cmd := exec.Command("gh", args...)
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
+	return cmd.Run()
+}
+
+func ghOutputWithToken(token string, args ...string) (string, error) {
+	cmd := exec.Command("gh", args...)
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func ghSetSecret(repo, token, name, value string) error {
 	cmd := exec.Command("gh", "secret", "set", name, "-R", repo)
+	cmd.Env = append(os.Environ(), "GH_TOKEN="+token)
 	cmd.Stdin = strings.NewReader(value)
 	return cmd.Run()
 }

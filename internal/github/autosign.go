@@ -13,7 +13,12 @@ type WorkflowStatus struct {
 
 // GetAutoSignStatus checks if the auto-sign workflows are enabled on the fork.
 func GetAutoSignStatus(repo string) ([]WorkflowStatus, error) {
-	out, err := ghOutput("api", fmt.Sprintf("repos/%s/actions/workflows", repo),
+	token, err := tokenForRepo(repo)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := ghOutputWithToken(token, "api", fmt.Sprintf("repos/%s/actions/workflows", repo),
 		"--jq", ".workflows[] | [.id, .name, .state] | @tsv")
 	if err != nil {
 		return nil, fmt.Errorf("could not check workflows: %w", err)
@@ -58,6 +63,11 @@ func IsAutoSignEnabled(repo string) (bool, error) {
 
 // EnableAutoSign enables all sign workflows on the fork.
 func EnableAutoSign(repo string) error {
+	token, err := tokenForRepo(repo)
+	if err != nil {
+		return err
+	}
+
 	workflows, err := GetAutoSignStatus(repo)
 	if err != nil {
 		return err
@@ -66,7 +76,7 @@ func EnableAutoSign(repo string) error {
 	changed := 0
 	for _, w := range workflows {
 		if strings.Contains(w.Name, "Sign") || strings.Contains(w.Name, "Keepalive") {
-			err := ghRun("api", "-X", "PUT",
+			err := ghRunWithToken(token, "api", "-X", "PUT",
 				fmt.Sprintf("repos/%s/actions/workflows/%d/enable", repo, w.ID))
 			if err != nil {
 				return fmt.Errorf("enable %s: %w", w.Name, err)
@@ -84,6 +94,11 @@ func EnableAutoSign(repo string) error {
 
 // DisableAutoSign disables all sign workflows on the fork.
 func DisableAutoSign(repo string) error {
+	token, err := tokenForRepo(repo)
+	if err != nil {
+		return err
+	}
+
 	workflows, err := GetAutoSignStatus(repo)
 	if err != nil {
 		return err
@@ -92,7 +107,7 @@ func DisableAutoSign(repo string) error {
 	changed := 0
 	for _, w := range workflows {
 		if strings.Contains(w.Name, "Sign") || strings.Contains(w.Name, "Keepalive") {
-			err := ghRun("api", "-X", "PUT",
+			err := ghRunWithToken(token, "api", "-X", "PUT",
 				fmt.Sprintf("repos/%s/actions/workflows/%d/disable", repo, w.ID))
 			if err != nil {
 				return fmt.Errorf("disable %s: %w", w.Name, err)
