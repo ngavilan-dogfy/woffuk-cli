@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -63,7 +64,15 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 		}
 	}
 
-	for _, g := range groups {
+	// Sort groups by key for deterministic output
+	var keys []string
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		g := groups[key]
 		daysStr := intSliceJoin(g.days, ",")
 		namesStr := strings.Join(g.names, "-")
 
@@ -133,7 +142,12 @@ func signTimes(schedule config.Schedule) []string {
 // For DST zones, each cron covers both UTC offsets via comma-separated hours.
 // A timezone guard verifies the exact local HH:MM at runtime to prevent
 // double signing during DST transitions.
-func GenerateWorkflowYAML(schedule config.Schedule, tz string) string {
+func GenerateWorkflowYAML(schedule config.Schedule, tz string, opts ...int) string {
+	// Optional random delay in seconds (default 90)
+	randomDelay := 90
+	if len(opts) > 0 && opts[0] > 0 {
+		randomDelay = opts[0]
+	}
 	crons := GenerateCrons(schedule, tz)
 	isDST := hasDST(tz)
 
@@ -181,6 +195,12 @@ func GenerateWorkflowYAML(schedule config.Schedule, tz string) string {
 		guardCondition = "\n        if: steps.tz.outputs.skip != 'true'"
 	}
 
+	// Failure notification condition: always on failure, but skip if guard skipped
+	failureCondition := "\n        if: failure()"
+	if isDST {
+		failureCondition = "\n        if: failure() && steps.tz.outputs.skip != 'true'"
+	}
+
 	return fmt.Sprintf(`name: Auto Sign
 
 on:
@@ -202,8 +222,8 @@ jobs:
           curl -fsSL "https://github.com/ngavilan-dogfy/woffux/releases/latest/download/woffux-linux-amd64" -o woffux
           chmod +x woffux
 
-      - name: Random delay (2-5 min)%s
-        run: sleep $(( RANDOM %% 181 + 120 ))
+      - name: Random delay%s
+        run: sleep $(( RANDOM %% %d + 1 ))
 
       - name: Sign%s
         run: ./woffux sign
@@ -218,7 +238,18 @@ jobs:
           WOFFU_HOME_LONGITUDE: ${{ secrets.WOFFU_HOME_LONGITUDE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-`, strings.Join(cronLines, "\n"), guardYAML, guardCondition, guardCondition, guardCondition)
+
+      - name: Notify failure%s
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            MSG="❌ woffux auto-sign failed at $(TZ=%s date '+%%H:%%M %%Z %%Y-%%m-%%d')"
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d chat_id="${TELEGRAM_CHAT_ID}" -d text="${MSG}" > /dev/null
+          fi
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+`, strings.Join(cronLines, "\n"), guardYAML, guardCondition, guardCondition, randomDelay, guardCondition, failureCondition, ianaZone)
 }
 
 // GenerateManualWorkflowYAML generates the manual sign workflow.
@@ -317,7 +348,7 @@ func loadTimezone(tz string) *time.Location {
 	return loc
 }
 
-// hasDST returns true if the timezone observes DST (different offsets in Jan vs Jul).
+// hasDST returns true if the timezone observes DST.
 func hasDST(tz string) bool {
 	loc := loadTimezone(tz)
 	jan := time.Date(2026, time.January, 15, 12, 0, 0, 0, loc)

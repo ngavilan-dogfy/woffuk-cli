@@ -45,6 +45,15 @@ type Config struct {
 	SavedSchedules  map[string]Schedule `yaml:"saved_schedules,omitempty"`
 	ActiveSchedule  string              `yaml:"active_schedule,omitempty"`
 	Telegram        TelegramConfig      `yaml:"telegram,omitempty"`
+	RandomDelaySecs int                 `yaml:"random_delay_secs,omitempty"` // Max random delay before signing (default: 90)
+}
+
+// GetRandomDelaySecs returns the configured random delay or the default (90s).
+func (c *Config) GetRandomDelaySecs() int {
+	if c.RandomDelaySecs > 0 {
+		return c.RandomDelaySecs
+	}
+	return 90
 }
 
 // SaveSchedulePreset saves a schedule with a name.

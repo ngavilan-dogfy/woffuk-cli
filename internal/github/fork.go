@@ -128,7 +128,7 @@ func pushWorkflowsViaAPI(repo string, cfg *config.Config) error {
 	}
 
 	workflows := map[string]string{
-		".github/workflows/sign.yml":        GenerateWorkflowYAML(cfg.Schedule, cfg.Timezone),
+		".github/workflows/sign.yml":        GenerateWorkflowYAML(cfg.Schedule, cfg.Timezone, cfg.GetRandomDelaySecs()),
 		".github/workflows/sign-manual.yml": GenerateManualWorkflowYAML(),
 		".github/workflows/keepalive.yml":   GenerateKeepaliveWorkflowYAML(),
 	}
@@ -201,7 +201,7 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 	}
 
 	// Generate and write auto-sign workflow
-	autoYAML := GenerateWorkflowYAML(cfg.Schedule, cfg.Timezone)
+	autoYAML := GenerateWorkflowYAML(cfg.Schedule, cfg.Timezone, cfg.GetRandomDelaySecs())
 	if err := os.WriteFile(filepath.Join(workflowDir, "sign.yml"), []byte(autoYAML), 0644); err != nil {
 		return err
 	}
@@ -243,8 +243,16 @@ func enableActions(repo, token string) {
 	cmd.Run()
 }
 
-func getGitHubUsername() (string, error) {
-	out, err := ghOutput("api", "user", "-q", ".login")
+// getGitHubUsername returns the login of the currently active gh account.
+// If token is provided, uses that token instead of the active account.
+func getGitHubUsername(token ...string) (string, error) {
+	var out string
+	var err error
+	if len(token) > 0 && token[0] != "" {
+		out, err = ghOutputWithToken(token[0], "api", "user", "-q", ".login")
+	} else {
+		out, err = ghOutput("api", "user", "-q", ".login")
+	}
 	if err != nil {
 		return "", fmt.Errorf("get github username (is gh authenticated?): %w", err)
 	}
