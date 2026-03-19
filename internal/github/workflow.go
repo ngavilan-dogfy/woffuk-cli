@@ -14,6 +14,7 @@ import (
 type CronEntry struct {
 	Cron    string
 	Comment string
+	Action  string // "in" or "out" (even index = in, odd index = out)
 }
 
 // GenerateCrons converts the schedule config into GitHub Actions cron expressions.
@@ -76,7 +77,13 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 		daysStr := intSliceJoin(g.days, ",")
 		namesStr := strings.Join(g.names, "-")
 
-		for _, t := range g.times {
+		for i, t := range g.times {
+			// Even index = IN, odd index = OUT
+			action := "in"
+			if i%2 != 0 {
+				action = "out"
+			}
+
 			hour, minute := parseTime(t.Time)
 
 			utcHourStd := localToUTC(hour, stdOff)
@@ -85,7 +92,7 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 				if utcHourStd == utcHourDST {
 					cron := fmt.Sprintf("%d %d * * %s", minute, utcHourStd, daysStr)
 					comment := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, stdOff)
-					entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+					entries = append(entries, CronEntry{Cron: cron, Comment: comment, Action: action})
 				} else {
 					h1, h2 := utcHourStd, utcHourDST
 					if h1 > h2 {
@@ -93,12 +100,12 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 					}
 					cron := fmt.Sprintf("%d %d,%d * * %s", minute, h1, h2, daysStr)
 					comment := fmt.Sprintf("%s %s (UTC%+d/UTC%+d)", namesStr, t.Time, stdOff, dstOff)
-					entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+					entries = append(entries, CronEntry{Cron: cron, Comment: comment, Action: action})
 				}
 			} else {
 				cron := fmt.Sprintf("%d %d * * %s", minute, utcHourStd, daysStr)
 				comment := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, stdOff)
-				entries = append(entries, CronEntry{Cron: cron, Comment: comment})
+				entries = append(entries, CronEntry{Cron: cron, Comment: comment, Action: action})
 			}
 		}
 	}
@@ -201,6 +208,18 @@ func GenerateWorkflowYAML(schedule config.Schedule, tz string, opts ...int) stri
 		failureCondition = "\n        if: failure() && steps.tz.outputs.skip != 'true'"
 	}
 
+	// Build cron→action case statement for --expected flag
+	var caseLines []string
+	for _, c := range crons {
+		caseLines = append(caseLines, fmt.Sprintf(`          "%s") EXPECTED="%s" ;;`, c.Cron, c.Action))
+	}
+	caseBlock := fmt.Sprintf(`CRON="${{ github.event.schedule }}"
+          EXPECTED=""
+          case "$CRON" in
+%s
+          esac
+          ./woffux sign ${EXPECTED:+--expected "$EXPECTED"}`, strings.Join(caseLines, "\n"))
+
 	return fmt.Sprintf(`name: Auto Sign
 
 on:
@@ -226,7 +245,8 @@ jobs:
         run: sleep $(( RANDOM %% %d + 1 ))
 
       - name: Sign%s
-        run: ./woffux sign
+        run: |
+          %s
         env:
           WOFFU_URL: ${{ secrets.WOFFU_URL }}
           WOFFU_COMPANY_URL: ${{ secrets.WOFFU_COMPANY_URL }}
@@ -249,7 +269,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-`, strings.Join(cronLines, "\n"), guardYAML, guardCondition, guardCondition, randomDelay, guardCondition, failureCondition, ianaZone)
+`, strings.Join(cronLines, "\n"), guardYAML, guardCondition, guardCondition, randomDelay, guardCondition, caseBlock, failureCondition, ianaZone)
 }
 
 // GenerateManualWorkflowYAML generates the manual sign workflow.

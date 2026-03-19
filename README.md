@@ -154,6 +154,8 @@ All set!
 |---|---|
 | `woffux sign` | Clock in/out right now |
 | `woffux sign --force` | Sign even on non-working days |
+| `woffux sign --expected in` | Only sign IN (skip if already signed in) |
+| `woffux sign --expected out` | Only sign OUT (skip if already signed out) |
 | `woffux request` | Create a request (telework, vacation, absence) |
 | `woffux request -t Teletrabajo -d 2026-03-20` | Request telework for a specific date |
 | `woffux request cancel <id>` | Cancel a request |
@@ -171,7 +173,13 @@ All set!
 | `woffux setup` | Full setup wizard |
 | `woffux config` | View all settings at a glance |
 | `woffux config edit` | Change any individual setting |
+| `woffux schedule` | View current auto-sign schedule |
 | `woffux schedule edit` | Edit schedule with presets or custom blocks |
+| `woffux schedule list` | List saved schedule presets |
+| `woffux schedule save <name>` | Save current schedule as a named preset |
+| `woffux schedule load <name>` | Load a saved preset (and sync workflows) |
+| `woffux schedule delete <name>` | Delete a saved preset |
+| `woffux schedule push` | Push schedule to GitHub workflows |
 | `woffux sync` | Push local config to GitHub |
 | `woffux update` | Update to latest version |
 | `woffux --version` | Show current version |
@@ -224,6 +232,8 @@ Multi-tab dashboard with live data:
 - **Events** — available vacations, hours, personal days
 - **Calendar** — upcoming holidays and events
 
+The sign confirmation shows whether you'll sign **IN** or **OUT** based on your current slot state.
+
 Keyboard shortcuts:
 
 | Key | Action |
@@ -248,6 +258,16 @@ GitHub Actions clocks you in/out on schedule. Toggle with `woffux auto on/off`.
 
 Each run adds a random 2–5 min delay for variance.
 
+### Smart sign guard
+
+Auto-sign uses the `--expected` flag to prevent toggling you in the wrong direction. Each scheduled time knows whether it should be an IN or OUT:
+
+- If you **manually sign IN** before the scheduled IN time, the auto-sign detects you're already signed in and **skips** (instead of accidentally signing you OUT).
+- If you **manually sign OUT** before the scheduled OUT time, same logic — it **skips**.
+- Sends a Telegram notification when a sign is skipped.
+
+This is fully automatic after syncing — no configuration needed.
+
 ### Schedule presets
 
 ```
@@ -259,6 +279,24 @@ Each run adds a random 2–5 min delay for variance.
 ```
 
 Custom schedules support multi-select days, per-day blocks, and can be saved as named presets (e.g., "summer", "winter") to switch between them.
+
+Manage presets from the CLI:
+
+```bash
+# Save current schedule
+woffux schedule save summer
+
+# List all saved presets
+woffux schedule list
+
+# Switch to a preset (syncs workflows automatically)
+woffux schedule load winter
+
+# Delete a preset
+woffux schedule delete old-schedule
+```
+
+In the TUI, press `Enter` to open the action menu — saved presets appear for quick switching, and "Save as preset" lets you name and save the current schedule.
 
 ### Syncing
 

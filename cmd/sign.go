@@ -14,6 +14,7 @@ import (
 )
 
 var signForce bool
+var signExpected string
 
 var signCmd = &cobra.Command{
 	Use:   "sign",
@@ -21,8 +22,13 @@ var signCmd = &cobra.Command{
 	Long: `Clock in/out on Woffu. Checks calendar first and only signs on working days.
 
 Examples:
-  woffux sign                Sign for today
-  woffux sign --force        Sign even if not a working day
+  woffux sign                    Sign for today (toggle in/out)
+  woffux sign --force            Sign even if not a working day
+  woffux sign --expected in      Only sign IN (skip if already signed in)
+  woffux sign --expected out     Only sign OUT (skip if already signed out)
+
+The --expected flag prevents the auto-sign from toggling you in the wrong
+direction when you've already signed manually.
 
 Batch (from stdin):
   echo "sign" | woffux sign
@@ -66,6 +72,25 @@ In CI, reads credentials from environment variables.`,
 			return nil
 		}
 
+		// Guard: check if sign should be skipped based on expected action
+		if signExpected != "" {
+			expected := woffu.SignAction(signExpected)
+			slots, slotsErr := woffu.GetTodaySlots(companyClient, token)
+			if slotsErr != nil {
+				return fmt.Errorf("get slots: %w", slotsErr)
+			}
+			if woffu.ShouldSkipSign(slots, expected) {
+				reason := fmt.Sprintf("Already signed %s", signExpected)
+				if isTTY() {
+					fmt.Printf("%s — skipping.\n", reason)
+				} else {
+					fmt.Printf("SKIP %s %s\n", info.Date, reason)
+				}
+				_ = notify.SendSkippedNotification(telegramCfg, info.Date, reason)
+				return nil
+			}
+		}
+
 		if isTTY() {
 			fmt.Printf("%s %s — signing with coordinates (%.4f, %.4f)\n",
 				info.Mode.Emoji(), info.Mode.Label(), info.Latitude, info.Longitude)
@@ -92,6 +117,7 @@ In CI, reads credentials from environment variables.`,
 
 func init() {
 	signCmd.Flags().BoolVar(&signForce, "force", false, "Sign even if not a working day")
+	signCmd.Flags().StringVar(&signExpected, "expected", "", "Expected sign action: 'in' or 'out'. Skips if already in that state.")
 }
 
 // readStdinLines reads non-empty lines from stdin (for batch piping).

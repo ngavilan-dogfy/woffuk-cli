@@ -119,10 +119,142 @@ var schedulePushCmd = &cobra.Command{
 	},
 }
 
+var scheduleListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List saved schedule presets",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+
+		if len(cfg.SavedSchedules) == 0 {
+			fmt.Println("  No saved presets. Use 'woffux schedule save <name>' to save the current schedule.")
+			return nil
+		}
+
+		sIn := lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+		sOut := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+		sActive := lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true)
+
+		for name, s := range cfg.SavedSchedules {
+			label := sBold.Render(name)
+			if name == cfg.ActiveSchedule {
+				label += sActive.Render(" (active)")
+			}
+			fmt.Printf("\n  %s\n", label)
+			printScheduleVisual(s, sIn, sOut)
+		}
+		fmt.Println()
+		return nil
+	},
+}
+
+var scheduleSaveCmd = &cobra.Command{
+	Use:   "save <name>",
+	Short: "Save current schedule as a named preset",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+
+		name := args[0]
+		cfg.SaveSchedulePreset(name, cfg.Schedule)
+		cfg.ActiveSchedule = name
+
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+
+		fmt.Printf("  %s Saved as \"%s\"\n", sOk, name)
+		return nil
+	},
+}
+
+var scheduleLoadCmd = &cobra.Command{
+	Use:   "load <name>",
+	Short: "Load a saved schedule preset",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+
+		name := args[0]
+		if !cfg.LoadSchedulePreset(name) {
+			return fmt.Errorf("preset \"%s\" not found. Use 'woffux schedule list' to see available presets", name)
+		}
+
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+
+		sIn := lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+		sOut := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+
+		fmt.Printf("  %s Loaded \"%s\"\n\n", sOk, name)
+		printScheduleVisual(cfg.Schedule, sIn, sOut)
+		fmt.Println()
+
+		// Sync workflows if configured
+		if cfg.GithubFork != "" {
+			var pushErr error
+			spinner.New().
+				Title("Pushing workflows...").
+				Action(func() { pushErr = gh.SyncWorkflows(cfg) }).
+				Run()
+
+			if pushErr != nil {
+				fmt.Printf("  %s Push failed: %s\n", sWarn, pushErr)
+			} else {
+				fmt.Printf("  %s Workflows updated!\n", sOk)
+			}
+		}
+
+		return nil
+	},
+}
+
+var scheduleDeleteCmd = &cobra.Command{
+	Use:   "delete <name>",
+	Short: "Delete a saved schedule preset",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+
+		name := args[0]
+		if _, ok := cfg.SavedSchedules[name]; !ok {
+			return fmt.Errorf("preset \"%s\" not found", name)
+		}
+
+		delete(cfg.SavedSchedules, name)
+		if cfg.ActiveSchedule == name {
+			cfg.ActiveSchedule = ""
+		}
+
+		if err := config.Save(cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+
+		fmt.Printf("  %s Deleted \"%s\"\n", sOk, name)
+		return nil
+	},
+}
+
 func init() {
 	scheduleCmd.Flags().BoolVar(&scheduleJSONFlag, "json", false, "Output as JSON")
 	scheduleCmd.AddCommand(scheduleEditCmd)
 	scheduleCmd.AddCommand(schedulePushCmd)
+	scheduleCmd.AddCommand(scheduleListCmd)
+	scheduleCmd.AddCommand(scheduleSaveCmd)
+	scheduleCmd.AddCommand(scheduleLoadCmd)
+	scheduleCmd.AddCommand(scheduleDeleteCmd)
 }
 
 // scheduleToJSON builds a structured map for JSON output.

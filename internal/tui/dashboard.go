@@ -64,12 +64,13 @@ type overlayKind int
 type requestDoneMsg struct{ count int }
 
 const (
-	overlayNone      overlayKind = iota
-	overlayMenu                  // action menu
-	overlaySignConf              // sign confirmation
-	overlayAutoConf              // auto-sign toggle confirmation
-	overlayCalAction             // calendar batch action picker
-	overlayDayAction             // single day context menu
+	overlayNone       overlayKind = iota
+	overlayMenu                   // action menu
+	overlaySignConf               // sign confirmation
+	overlayAutoConf               // auto-sign toggle confirmation
+	overlayCalAction              // calendar batch action picker
+	overlayDayAction              // single day context menu
+	overlaySavePreset             // save-as-preset text input
 )
 
 // ── Dashboard model ──
@@ -93,14 +94,15 @@ type Dashboard struct {
 	err          error
 
 	// UI state
-	activeTab  int
-	signing    bool
-	overlay    overlayKind
-	menuCursor int
-	autoTarget bool // what the auto-sign toggle overlay wants to set
-	flash      string
-	flashErr   bool
-	cal        *calendarGrid // interactive calendar
+	activeTab   int
+	signing     bool
+	overlay     overlayKind
+	menuCursor  int
+	autoTarget  bool   // what the auto-sign toggle overlay wants to set
+	presetInput string // text buffer for save-preset overlay
+	flash       string
+	flashErr    bool
+	cal         *calendarGrid // interactive calendar
 
 	// Layout
 	width  int
@@ -274,6 +276,30 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			d.overlay = overlayNone
 			return d, d.executeDayAction(dayActions[d.menuCursor])
+		}
+		return d, nil
+	}
+
+	// ── Overlay: save preset (text input) ──
+	if d.overlay == overlaySavePreset {
+		switch key {
+		case "esc":
+			d.overlay = overlayNone
+		case "enter":
+			if d.presetInput != "" {
+				name := d.presetInput
+				d.overlay = overlayNone
+				return d, d.savePreset(name)
+			}
+		case "backspace":
+			if len(d.presetInput) > 0 {
+				d.presetInput = d.presetInput[:len(d.presetInput)-1]
+			}
+		default:
+			// Only accept printable single characters
+			if len(key) == 1 && key[0] >= 32 && key[0] <= 126 {
+				d.presetInput += key
+			}
 		}
 		return d, nil
 	}
@@ -478,8 +504,18 @@ func (d *Dashboard) View() string {
 		return d.renderCalActionOverlay()
 	case overlayDayAction:
 		return d.renderDayActionOverlay()
+	case overlaySavePreset:
+		return d.renderSavePresetOverlay()
 	case overlaySignConf:
-		return d.renderOverlayConfirm("Sign now?", "Clock in/out on Woffu right now.", "y/enter", "n/esc")
+		signAction := "IN"
+		if woffu.IsSignedIn(d.slots) {
+			signAction = "OUT"
+		}
+		return d.renderOverlayConfirm(
+			fmt.Sprintf("Sign %s?", signAction),
+			fmt.Sprintf("Clock %s on Woffu right now.", strings.ToLower(signAction)),
+			"y/enter", "n/esc",
+		)
 	case overlayAutoConf:
 		verb := "Enable"
 		desc := "Resume GitHub Actions auto-signing."
@@ -823,6 +859,7 @@ func (d *Dashboard) getActions() []action {
 	}
 
 	actions = append(actions,
+		action{key: "save-preset", name: "Save as preset", desc: "Save current schedule with a name"},
 		action{key: "edit-schedule", name: "Edit schedule", desc: "Change auto-sign times"},
 		action{key: "sync", name: "Sync to GitHub", desc: "Push secrets + workflows to fork"},
 		action{key: "open", name: "Open Woffu", desc: "Open Woffu in browser"},
@@ -840,6 +877,10 @@ func (d *Dashboard) executeAction(a action) tea.Cmd {
 		return d.toggleAuto(true)
 	case "auto-off":
 		return d.toggleAuto(false)
+	case "save-preset":
+		d.presetInput = ""
+		d.overlay = overlaySavePreset
+		return nil
 	case "edit-schedule":
 		return d.editSchedule()
 	case "sync":
@@ -1456,6 +1497,39 @@ func (d *Dashboard) applyPreset(name string) tea.Cmd {
 		}
 		return syncDoneMsg{}
 	}
+}
+
+func (d *Dashboard) savePreset(name string) tea.Cmd {
+	return func() tea.Msg {
+		d.cfg.SaveSchedulePreset(name, d.cfg.Schedule)
+		d.cfg.ActiveSchedule = name
+		if err := config.Save(d.cfg); err != nil {
+			return errMsg{fmt.Errorf("save config: %w", err)}
+		}
+		return syncDoneMsg{}
+	}
+}
+
+func (d *Dashboard) renderSavePresetOverlay() string {
+	title := sKey.Render("Save schedule as preset")
+	input := d.presetInput
+	if input == "" {
+		input = sDimmed.Render("type a name...")
+	} else {
+		input = sValue.Render(input) + sKey.Render("_")
+	}
+	help := sDimmed.Render("enter = save  esc = cancel")
+
+	box := fmt.Sprintf("\n  %s\n\n  > %s\n\n  %s\n", title, input, help)
+
+	return lipgloss.Place(d.width, d.height,
+		lipgloss.Center, lipgloss.Center,
+		lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("63")).
+			Padding(1, 3).
+			Render(box),
+	)
 }
 
 func (d *Dashboard) tick() tea.Cmd {

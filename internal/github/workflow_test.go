@@ -238,3 +238,41 @@ func TestGenerateWorkflowYAML_ValidBashSyntax(t *testing.T) {
 		t.Error("YAML should contain RANDOM % (valid bash modulo)")
 	}
 }
+
+func TestGenerateWorkflowYAML_ContainsExpectedGuard(t *testing.T) {
+	yaml := GenerateWorkflowYAML(standardSchedule(), "CET")
+
+	// Should contain the case statement for --expected flag
+	if !strings.Contains(yaml, `--expected "$EXPECTED"`) {
+		t.Error("workflow should pass --expected flag to woffux sign")
+	}
+	if !strings.Contains(yaml, `case "$CRON" in`) {
+		t.Error("workflow should contain case statement for cron→action mapping")
+	}
+	// Check that IN and OUT actions are both present
+	if !strings.Contains(yaml, `EXPECTED="in"`) {
+		t.Error("workflow should map some crons to 'in' action")
+	}
+	if !strings.Contains(yaml, `EXPECTED="out"`) {
+		t.Error("workflow should map some crons to 'out' action")
+	}
+}
+
+func TestGenerateCrons_ActionField(t *testing.T) {
+	crons := GenerateCrons(standardSchedule(), "CET")
+
+	// Mon-Thu: 08:30=in, 13:30=out, 14:15=in, 17:30=out
+	// Fri: 08:00=in, 15:00=out
+	// Sorted by cron key: Fri first (08:00, 15:00), then Mon-Thu (08:30, 13:30, 14:15, 17:30)
+	expectedActions := []string{"in", "out", "in", "out", "in", "out"}
+
+	if len(crons) != len(expectedActions) {
+		t.Fatalf("expected %d entries, got %d", len(expectedActions), len(crons))
+	}
+
+	for i, c := range crons {
+		if c.Action != expectedActions[i] {
+			t.Errorf("entry %d (%s): action = %q, want %q", i, c.Comment, c.Action, expectedActions[i])
+		}
+	}
+}
