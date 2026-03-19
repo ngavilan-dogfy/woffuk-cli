@@ -2,8 +2,12 @@ name: Auto Sign
 
 on:
   schedule:
-    - cron: '45 11,12 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 13:45 (UTC+1/UTC+2)
-    - cron: '30 12,13 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 14:30 (UTC+1/UTC+2)
+    - cron: '0 6,7 * * 5'  # Fri 08:00 (UTC+1/UTC+2)
+    - cron: '0 13,14 * * 5'  # Fri 15:00 (UTC+1/UTC+2)
+    - cron: '30 6,7 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 08:30 (UTC+1/UTC+2)
+    - cron: '30 11,12 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 13:30 (UTC+1/UTC+2)
+    - cron: '15 12,13 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 14:15 (UTC+1/UTC+2)
+    - cron: '30 15,16 * * 1,2,3,4'  # Mon-Tue-Wed-Thu 17:30 (UTC+1/UTC+2)
 
 concurrency:
   group: sign
@@ -24,7 +28,7 @@ jobs:
           if [ "$LOCAL_HOUR" -lt 0 ]; then LOCAL_HOUR=$(( LOCAL_HOUR + 24 )); fi
           if [ "$LOCAL_HOUR" -ge 24 ]; then LOCAL_HOUR=$(( LOCAL_HOUR - 24 )); fi
           LOCAL_TIME=$(printf "%02d:%02d" "$LOCAL_HOUR" "$CRON_MIN")
-          SIGN_TIMES="13:45 14:30"
+          SIGN_TIMES="08:00 15:00 08:30 13:30 14:15 17:30"
           MATCH=false
           for t in $SIGN_TIMES; do
             if [ "$LOCAL_TIME" = "$t" ]; then MATCH=true; break; fi
@@ -53,8 +57,12 @@ jobs:
           CRON="${{ github.event.schedule }}"
           EXPECTED=""
           case "$CRON" in
-          "45 11,12 * * 1,2,3,4") EXPECTED="in" ;;
-          "30 12,13 * * 1,2,3,4") EXPECTED="out" ;;
+          "0 6,7 * * 5") EXPECTED="in" ;;
+          "0 13,14 * * 5") EXPECTED="out" ;;
+          "30 6,7 * * 1,2,3,4") EXPECTED="in" ;;
+          "30 11,12 * * 1,2,3,4") EXPECTED="out" ;;
+          "15 12,13 * * 1,2,3,4") EXPECTED="in" ;;
+          "30 15,16 * * 1,2,3,4") EXPECTED="out" ;;
           esac
           ./woffux sign ${EXPECTED:+--expected "$EXPECTED"}
         env:
