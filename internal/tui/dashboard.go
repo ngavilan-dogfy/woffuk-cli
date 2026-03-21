@@ -204,10 +204,7 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err == nil {
 			d.cfg = newCfg
 		}
-		// Offer to save as new preset
-		d.presetInput = ""
-		d.overlay = overlaySavePreset
-		d.setFlash("Schedule updated! Save as preset?", false)
+		d.setFlash("Schedule updated!", false)
 		return d, tea.Batch(d.fetchData(), d.clearFlashAfter(3*time.Second))
 
 	case errMsg:
@@ -447,11 +444,10 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		d.overlay = overlayMenu
 		d.menuCursor = 0
 	case "s":
-		d.overlay = overlaySignConf
+		return d, d.trySign()
 	case "a":
 		if d.autoActive != nil {
-			d.autoTarget = !*d.autoActive
-			d.overlay = overlayAutoConf
+			return d, d.toggleAuto(!*d.autoActive)
 		} else if d.cfg.GithubFork == "" {
 			d.setFlash("Auto-sign not set up. Run woffux setup.", true)
 			return d, d.clearFlashAfter(3 * time.Second)
@@ -1113,36 +1109,53 @@ func (d *Dashboard) fetchData() tea.Cmd {
 		}
 		d.token = token
 
-		profile, _ := woffu.GetUserProfile(d.companyClient, token)
-
-		info, err := woffu.GetSignInfo(d.companyClient, token,
-			d.cfg.Latitude, d.cfg.Longitude, d.cfg.HomeLatitude, d.cfg.HomeLongitude)
-		if err != nil {
-			return errMsg{err}
-		}
-
-		events, err := woffu.GetAvailableEvents(d.companyClient, token)
-		if err != nil {
-			return errMsg{err}
-		}
-
-		slots, _ := woffu.GetTodaySlots(d.companyClient, token)
-
-		// Calendar for current month (or the month the grid is showing)
 		calYear := time.Now().Year()
 		calMonth := time.Now().Month()
 		if d.cal != nil {
 			calYear = d.cal.year
 			calMonth = d.cal.month
 		}
-		calDays, _ := woffu.GetCalendarMonthYM(d.companyClient, token, calYear, calMonth)
 
-		// Enrich calendar with requests and signs
-		userId, _, _ := woffu.GetUserIds(d.companyClient, token)
-		if userId > 0 {
-			reqs, _ := woffu.GetMonthRequests(d.companyClient, token, userId, calYear, calMonth)
-			signs, _ := woffu.GetMonthSigns(d.companyClient, token, calYear, calMonth)
-			woffu.EnrichCalendarDays(calDays, reqs, signs)
+		// Parallel API calls — all independent after auth
+		var (
+			profile  *woffu.UserProfile
+			info     *woffu.SignInfo
+			events   []woffu.AvailableUserEvent
+			slots    []woffu.SignSlot
+			calDays  []woffu.CalendarDay
+			userId   int
+			reqs     []woffu.UserRequest
+			signs    []woffu.SignRecord
+			infoErr  error
+			wg       sync.WaitGroup
+		)
+
+		wg.Add(5)
+		go func() { defer wg.Done(); profile, _ = woffu.GetUserProfile(d.companyClient, token) }()
+		go func() {
+			defer wg.Done()
+			info, infoErr = woffu.GetSignInfo(d.companyClient, token,
+				d.cfg.Latitude, d.cfg.Longitude, d.cfg.HomeLatitude, d.cfg.HomeLongitude)
+		}()
+		go func() { defer wg.Done(); events, _ = woffu.GetAvailableEvents(d.companyClient, token) }()
+		go func() { defer wg.Done(); slots, _ = woffu.GetTodaySlots(d.companyClient, token) }()
+		go func() {
+			defer wg.Done()
+			calDays, _ = woffu.GetCalendarMonthYM(d.companyClient, token, calYear, calMonth)
+			userId, _, _ = woffu.GetUserIds(d.companyClient, token)
+			if userId > 0 {
+				var wg2 sync.WaitGroup
+				wg2.Add(2)
+				go func() { defer wg2.Done(); reqs, _ = woffu.GetMonthRequests(d.companyClient, token, userId, calYear, calMonth) }()
+				go func() { defer wg2.Done(); signs, _ = woffu.GetMonthSigns(d.companyClient, token, calYear, calMonth) }()
+				wg2.Wait()
+				woffu.EnrichCalendarDays(calDays, reqs, signs)
+			}
+		}()
+		wg.Wait()
+
+		if infoErr != nil {
+			return errMsg{infoErr}
 		}
 
 		return dataMsg{signInfo: info, events: events, profile: profile, slots: slots, calendarDays: calDays, userId: userId}
