@@ -18,9 +18,9 @@ type CronEntry struct {
 }
 
 // GenerateCrons converts the schedule config into GitHub Actions cron expressions.
-// For DST timezones, generates a single cron per sign time with comma-separated
-// UTC hours (e.g., "30 6,7 * * 1-4") covering both standard and DST offsets.
-// A timezone guard step at runtime verifies which offset is active.
+// For DST timezones, generates two separate cron entries per sign time — one for
+// each UTC offset (e.g., "30 6 * * 1-4" and "30 7 * * 1-4").
+// A timezone guard step at runtime skips the entry whose offset is not active.
 func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 	var entries []CronEntry
 
@@ -94,13 +94,16 @@ func GenerateCrons(schedule config.Schedule, tz string) []CronEntry {
 					comment := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, stdOff)
 					entries = append(entries, CronEntry{Cron: cron, Comment: comment, Action: action})
 				} else {
-					h1, h2 := utcHourStd, utcHourDST
+					h1, h2 := utcHourDST, utcHourStd
 					if h1 > h2 {
 						h1, h2 = h2, h1
 					}
-					cron := fmt.Sprintf("%d %d,%d * * %s", minute, h1, h2, daysStr)
-					comment := fmt.Sprintf("%s %s (UTC%+d/UTC%+d)", namesStr, t.Time, stdOff, dstOff)
-					entries = append(entries, CronEntry{Cron: cron, Comment: comment, Action: action})
+					cron1 := fmt.Sprintf("%d %d * * %s", minute, h1, daysStr)
+					comment1 := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, dstOff)
+					entries = append(entries, CronEntry{Cron: cron1, Comment: comment1, Action: action})
+					cron2 := fmt.Sprintf("%d %d * * %s", minute, h2, daysStr)
+					comment2 := fmt.Sprintf("%s %s (UTC%+d)", namesStr, t.Time, stdOff)
+					entries = append(entries, CronEntry{Cron: cron2, Comment: comment2, Action: action})
 				}
 			} else {
 				cron := fmt.Sprintf("%d %d * * %s", minute, utcHourStd, daysStr)
@@ -146,9 +149,8 @@ func signTimes(schedule config.Schedule) []string {
 }
 
 // GenerateWorkflowYAML generates the auto-sign GitHub Actions workflow.
-// For DST zones, each cron covers both UTC offsets via comma-separated hours.
-// A timezone guard verifies the exact local HH:MM at runtime to prevent
-// double signing during DST transitions.
+// For DST zones, each sign time produces two separate cron entries (one per UTC offset).
+// A timezone guard verifies the exact local HH:MM at runtime to skip the wrong offset.
 func GenerateWorkflowYAML(schedule config.Schedule, tz string, opts ...int) string {
 	// Optional random delay in seconds (default 90)
 	randomDelay := 90

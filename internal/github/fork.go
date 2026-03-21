@@ -234,6 +234,30 @@ func pushWorkflows(repo string, cfg *config.Config) error {
 	return nil
 }
 
+// CheckWorkflowSync compares the remote sign.yml with what the local config would generate.
+// Returns true if they match, false if out of sync.
+func CheckWorkflowSync(repo string, cfg *config.Config) (bool, error) {
+	token, err := tokenForRepo(repo)
+	if err != nil {
+		return false, err
+	}
+
+	out, err := ghOutputWithToken(token, "api",
+		fmt.Sprintf("repos/%s/contents/.github/workflows/sign.yml", repo),
+		"--jq", ".content")
+	if err != nil {
+		return false, fmt.Errorf("fetch remote workflow: %w", err)
+	}
+
+	remoteContent, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
+	if err != nil {
+		return false, fmt.Errorf("decode remote workflow: %w", err)
+	}
+
+	expected := GenerateWorkflowYAML(cfg.Schedule, cfg.Timezone, cfg.GetRandomDelaySecs())
+	return strings.TrimSpace(string(remoteContent)) == strings.TrimSpace(expected), nil
+}
+
 func enableActions(repo, token string) {
 	cmd := exec.Command("gh", "api", "-X", "PUT",
 		"repos/"+repo+"/actions/permissions",

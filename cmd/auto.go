@@ -29,7 +29,7 @@ var autoCmd = &cobra.Command{
 			return nil
 		}
 
-		return showAutoStatus(cfg.GithubFork)
+		return showAutoStatus(cfg.GithubFork, cfg)
 	},
 }
 
@@ -59,7 +59,7 @@ var autoOnCmd = &cobra.Command{
 		}
 
 		fmt.Printf("\n  %s Auto-signing enabled\n\n", sOk)
-		return showAutoStatus(cfg.GithubFork)
+		return showAutoStatus(cfg.GithubFork, cfg)
 	},
 }
 
@@ -114,13 +114,20 @@ func init() {
 	autoCmd.AddCommand(autoOffCmd)
 }
 
-func showAutoStatus(repo string) error {
+func showAutoStatus(repo string, cfg *config.Config) error {
 	var workflows []gh.WorkflowStatus
 	var statusErr error
+	var inSync bool
+	var syncErr error
 
 	spinner.New().
 		Title("Checking workflows...").
-		Action(func() { workflows, statusErr = gh.GetAutoSignStatus(repo) }).
+		Action(func() {
+			workflows, statusErr = gh.GetAutoSignStatus(repo)
+			if cfg != nil {
+				inSync, syncErr = gh.CheckWorkflowSync(repo, cfg)
+			}
+		}).
 		Run()
 
 	if statusErr != nil {
@@ -140,6 +147,21 @@ func showAutoStatus(repo string) error {
 			status = sDisabled.Render("disabled")
 		}
 		fmt.Printf("  %s %s\n", sName.Render(w.Name), status)
+	}
+
+	// Show sync status
+	if cfg != nil {
+		fmt.Println()
+		if syncErr != nil {
+			fmt.Printf("  %s Could not check sync: %s\n",
+				lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("!"), syncErr)
+		} else if inSync {
+			fmt.Printf("  %s Schedule in sync with local config\n", sActive.Render("✓"))
+		} else {
+			fmt.Printf("  %s Schedule out of sync — run %s to update\n",
+				lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("⚠"),
+				sBold.Render("woffux sync"))
+		}
 	}
 
 	fmt.Println()
