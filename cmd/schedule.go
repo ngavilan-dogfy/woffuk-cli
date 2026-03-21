@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -64,31 +63,18 @@ var scheduleEditCmd = &cobra.Command{
 
 		fmt.Printf("  %s Schedule saved!\n", sOk)
 
-		// Push to GitHub if configured
+		// Sync workflows automatically
 		if cfg.GithubFork != "" {
-			var push bool
-			huh.NewForm(
-				huh.NewGroup(
-					huh.NewConfirm().
-						Title(fmt.Sprintf("Push to %s?", cfg.GithubFork)).
-						Affirmative("Yes").
-						Negative("Skip").
-						Value(&push),
-				),
-			).Run()
+			var pushErr error
+			spinner.New().
+				Title("Pushing workflows...").
+				Action(func() { pushErr = gh.SyncWorkflows(cfg) }).
+				Run()
 
-			if push {
-				var pushErr error
-				spinner.New().
-					Title("Pushing workflows...").
-					Action(func() { pushErr = gh.SyncWorkflows(cfg) }).
-					Run()
-
-				if pushErr != nil {
-					fmt.Printf("  %s Push failed: %s\n", sWarn, pushErr)
-				} else {
-					fmt.Printf("  %s Workflows updated!\n", sOk)
-				}
+			if pushErr != nil {
+				fmt.Printf("  %s Push failed: %s\n", sWarn, pushErr)
+			} else {
+				fmt.Printf("  %s Workflows updated!\n", sOk)
 			}
 		}
 

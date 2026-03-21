@@ -29,18 +29,19 @@ func standardSchedule() config.Schedule {
 func TestGenerateCrons_DSTZone(t *testing.T) {
 	crons := GenerateCrons(standardSchedule(), "Europe/Madrid")
 
-	// 4 Mon-Thu times + 2 Friday times = 6 entries
-	if len(crons) != 6 {
-		t.Fatalf("expected 6 cron entries, got %d", len(crons))
+	// Each DST sign time produces 2 entries (one per offset).
+	// 4 Mon-Thu times × 2 + 2 Friday times × 2 = 12 entries
+	if len(crons) != 12 {
+		t.Fatalf("expected 12 cron entries, got %d", len(crons))
 	}
 
-	// All entries for DST zone should have comma-separated hours
+	// No entry should have comma-separated hours (each is a single UTC hour)
 	for _, c := range crons {
-		if !strings.Contains(c.Cron, ",") {
-			t.Errorf("DST cron should have comma-separated hours: %s", c.Cron)
+		parts := strings.Fields(c.Cron)
+		if strings.Contains(parts[1], ",") {
+			t.Errorf("DST cron should NOT have comma-separated hours (split into separate entries): %s", c.Cron)
 		}
 		// Should NOT contain month ranges
-		parts := strings.Fields(c.Cron)
 		if len(parts) == 5 && parts[3] != "*" {
 			t.Errorf("cron should have * for month field, got: %s", parts[3])
 		}
@@ -88,14 +89,14 @@ func TestGenerateCrons_EST(t *testing.T) {
 	}
 	crons := GenerateCrons(schedule, "America/New_York")
 
-	if len(crons) != 1 {
-		t.Fatalf("expected 1 cron entry, got %d", len(crons))
+	// EST = UTC-5, EDT = UTC-4. 09:00 → UTC 14 (EST) or 13 (EDT) → 2 entries
+	if len(crons) != 2 {
+		t.Fatalf("expected 2 cron entries, got %d", len(crons))
 	}
 
-	// EST = UTC-5, EDT = UTC-4. 09:00 → UTC 14 (EST) or 13 (EDT)
-	c := crons[0]
-	if !strings.Contains(c.Cron, "13,14") {
-		t.Errorf("expected hours 13,14 for 09:00 EST/EDT, got: %s", c.Cron)
+	hours := crons[0].Cron + " " + crons[1].Cron
+	if !strings.Contains(hours, " 13 ") || !strings.Contains(hours, " 14 ") {
+		t.Errorf("expected hours 13 and 14 for 09:00 EST/EDT, got: %s / %s", crons[0].Cron, crons[1].Cron)
 	}
 }
 
@@ -108,14 +109,14 @@ func TestGenerateCrons_SouthernHemisphere(t *testing.T) {
 	}
 	crons := GenerateCrons(schedule, "Australia/Sydney")
 
-	if len(crons) != 1 {
-		t.Fatalf("expected 1 cron entry, got %d", len(crons))
+	// AEST=UTC+10, AEDT=UTC+11. 08:00 → UTC 22 (prev day, AEST) or 21 (AEDT) → 2 entries
+	if len(crons) != 2 {
+		t.Fatalf("expected 2 cron entries, got %d", len(crons))
 	}
 
-	// AEST=UTC+10, AEDT=UTC+11. 08:00 → UTC 22 (prev day, AEST) or 21 (AEDT)
-	c := crons[0]
-	if !strings.Contains(c.Cron, "21,22") {
-		t.Errorf("expected hours 21,22 for 08:00 AEST/AEDT, got: %s", c.Cron)
+	hours := crons[0].Cron + " " + crons[1].Cron
+	if !strings.Contains(hours, " 21 ") || !strings.Contains(hours, " 22 ") {
+		t.Errorf("expected hours 21 and 22 for 08:00 AEST/AEDT, got: %s / %s", crons[0].Cron, crons[1].Cron)
 	}
 }
 
@@ -261,10 +262,14 @@ func TestGenerateWorkflowYAML_ContainsExpectedGuard(t *testing.T) {
 func TestGenerateCrons_ActionField(t *testing.T) {
 	crons := GenerateCrons(standardSchedule(), "CET")
 
-	// Mon-Thu: 08:30=in, 13:30=out, 14:15=in, 17:30=out
-	// Fri: 08:00=in, 15:00=out
-	// Sorted by cron key: Fri first (08:00, 15:00), then Mon-Thu (08:30, 13:30, 14:15, 17:30)
-	expectedActions := []string{"in", "out", "in", "out", "in", "out"}
+	// Each DST sign time produces 2 entries with the same action.
+	// Fri: 08:00=in×2, 15:00=out×2. Mon-Thu: 08:30=in×2, 13:30=out×2, 14:15=in×2, 17:30=out×2.
+	// Sorted by cron key: Fri first, then Mon-Thu.
+	expectedActions := []string{
+		"in", "in", "out", "out",     // Fri 08:00, 15:00
+		"in", "in", "out", "out",     // Mon-Thu 08:30, 13:30
+		"in", "in", "out", "out",     // Mon-Thu 14:15, 17:30
+	}
 
 	if len(crons) != len(expectedActions) {
 		t.Fatalf("expected %d entries, got %d", len(expectedActions), len(crons))
