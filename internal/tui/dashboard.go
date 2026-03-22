@@ -68,8 +68,6 @@ type requestDoneMsg struct{ count int }
 const (
 	overlayNone       overlayKind = iota
 	overlayMenu                   // action menu
-	overlaySignConf               // sign confirmation
-	overlayAutoConf               // auto-sign toggle confirmation
 	overlayCalAction              // calendar batch action picker
 	overlayDayAction              // single day context menu
 	overlaySavePreset             // save-as-preset text input
@@ -100,7 +98,6 @@ type Dashboard struct {
 	signing     bool
 	overlay     overlayKind
 	menuCursor  int
-	autoTarget  bool   // what the auto-sign toggle overlay wants to set
 	presetInput string // text buffer for save-preset overlay
 	flash       string
 	flashErr    bool
@@ -123,7 +120,7 @@ func NewDashboard(client, companyClient *woffu.Client, cfg *config.Config, passw
 }
 
 func (d *Dashboard) Init() tea.Cmd {
-	return tea.Batch(d.fetchData(), d.fetchAutoStatus(), d.tick())
+	return tea.Batch(d.fetchData(), d.tick())
 }
 
 // ── Update ──
@@ -166,7 +163,7 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case signDoneMsg:
 		d.signing = false
 		d.setFlash("Signed successfully! Data refreshing...", false)
-		return d, tea.Batch(d.fetchData(), d.fetchAutoStatus(), d.clearFlashAfter(3*time.Second))
+		return d, tea.Batch(d.fetchData(), d.clearFlashAfter(3*time.Second))
 
 	case autoToggleMsg:
 		v := msg.enabled
@@ -227,30 +224,6 @@ func (d *Dashboard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-
-	// ── Overlay: sign confirmation ──
-	if d.overlay == overlaySignConf {
-		switch key {
-		case "y", "Y", "enter":
-			d.overlay = overlayNone
-			return d, d.trySign()
-		case "n", "N", "esc", "q":
-			d.overlay = overlayNone
-		}
-		return d, nil
-	}
-
-	// ── Overlay: auto-sign toggle confirmation ──
-	if d.overlay == overlayAutoConf {
-		switch key {
-		case "y", "Y", "enter":
-			d.overlay = overlayNone
-			return d, d.toggleAuto(d.autoTarget)
-		case "n", "N", "esc", "q":
-			d.overlay = overlayNone
-		}
-		return d, nil
-	}
 
 	// ── Overlay: calendar action (multi-select) ──
 	if d.overlay == overlayCalAction {
@@ -455,7 +428,7 @@ func (d *Dashboard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		d.loading = true
 		d.flash = ""
-		return d, tea.Batch(d.fetchData(), d.fetchAutoStatus())
+		return d, d.fetchData()
 	case "o":
 		openBrowserCmd(d.cfg.WoffuCompanyURL + "/v2")
 		d.setFlash("Opened Woffu in browser", false)
@@ -537,24 +510,6 @@ func (d *Dashboard) View() string {
 		return d.renderDayActionOverlay()
 	case overlaySavePreset:
 		return d.renderSavePresetOverlay()
-	case overlaySignConf:
-		signAction := "IN"
-		if woffu.IsSignedIn(d.slots) {
-			signAction = "OUT"
-		}
-		return d.renderOverlayConfirm(
-			fmt.Sprintf("Sign %s?", signAction),
-			fmt.Sprintf("Clock %s on Woffu right now.", strings.ToLower(signAction)),
-			"y/enter", "n/esc",
-		)
-	case overlayAutoConf:
-		verb := "Enable"
-		desc := "Resume GitHub Actions auto-signing."
-		if !d.autoTarget {
-			verb = "Disable"
-			desc = "Stop GitHub Actions from signing automatically."
-		}
-		return d.renderOverlayConfirm(verb+" auto-sign?", desc, "y/enter", "n/esc")
 	}
 
 	return dashboard
@@ -1069,36 +1024,6 @@ func (d *Dashboard) renderOverlayMenu() string {
 	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, menuBox)
 }
 
-func (d *Dashboard) renderOverlayConfirm(title, desc, yesHint, noHint string) string {
-	// Title bar with warning color
-	titleBar := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorText).
-		Background(lipgloss.Color("#78350f")).
-		Padding(0, 2).
-		Width(40).
-		Render("\u26A0 " + title) // ⚠
-
-	descText := lipgloss.NewStyle().
-		Foreground(colorMuted).
-		Padding(1, 2).
-		Render(desc)
-
-	helpText := lipgloss.NewStyle().
-		Padding(0, 2).
-		Render(hint(yesHint, "confirm") + "    " + hint(noHint, "cancel"))
-
-	content := titleBar + "\n" + descText + "\n" + helpText
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorWarning).
-		Padding(1, 1).
-		Render(content)
-
-	return lipgloss.Place(d.width, d.height, lipgloss.Center, lipgloss.Center, box)
-}
-
 // ── Commands ──
 
 func (d *Dashboard) fetchData() tea.Cmd {
@@ -1130,7 +1055,7 @@ func (d *Dashboard) fetchData() tea.Cmd {
 			wg       sync.WaitGroup
 		)
 
-		wg.Add(5)
+		wg.Add(6)
 		go func() { defer wg.Done(); profile, _ = woffu.GetUserProfile(d.companyClient, token) }()
 		go func() {
 			defer wg.Done()
@@ -1139,6 +1064,15 @@ func (d *Dashboard) fetchData() tea.Cmd {
 		}()
 		go func() { defer wg.Done(); events, _ = woffu.GetAvailableEvents(d.companyClient, token) }()
 		go func() { defer wg.Done(); slots, _ = woffu.GetTodaySlots(d.companyClient, token) }()
+		go func() {
+			defer wg.Done()
+			if d.cfg.GithubFork != "" {
+				if enabled, err := gh.IsAutoSignEnabled(d.cfg.GithubFork); err == nil {
+					v := enabled
+					d.autoActive = &v
+				}
+			}
+		}()
 		go func() {
 			defer wg.Done()
 			calDays, _ = woffu.GetCalendarMonthYM(d.companyClient, token, calYear, calMonth)
@@ -1205,18 +1139,6 @@ func (d *Dashboard) fetchCalendarData() tea.Cmd {
 	}
 }
 
-func (d *Dashboard) fetchAutoStatus() tea.Cmd {
-	if d.cfg.GithubFork == "" {
-		return nil
-	}
-	return func() tea.Msg {
-		enabled, err := gh.IsAutoSignEnabled(d.cfg.GithubFork)
-		if err != nil {
-			return nil // Silently fail - not critical
-		}
-		return autoToggleMsg{enabled: enabled}
-	}
-}
 
 func (d *Dashboard) trySign() tea.Cmd {
 	if d.signing {
