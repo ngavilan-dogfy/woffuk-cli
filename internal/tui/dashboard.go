@@ -1172,7 +1172,11 @@ func (d *Dashboard) toggleAuto(enable bool) tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if enable {
-			err = gh.EnableAutoSign(d.cfg.GithubFork)
+			// Re-enabling: sync workflows + reload crons to ensure GitHub picks them up
+			if syncErr := gh.SyncWorkflows(d.cfg); syncErr != nil {
+				return errMsg{fmt.Errorf("sync workflows: %w", syncErr)}
+			}
+			err = gh.ReloadAutoSign(d.cfg.GithubFork)
 		} else {
 			err = gh.DisableAutoSign(d.cfg.GithubFork)
 		}
